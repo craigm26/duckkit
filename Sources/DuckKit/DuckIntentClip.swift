@@ -24,6 +24,11 @@ public struct DuckIntentClip: Equatable, Sendable {
         /// `roulade` and `back_roll` both roll.
         public let quaternion: (Double, Double, Double, Double)
 
+        public init(x: Double, y: Double, z: Double,
+                    quaternion: (Double, Double, Double, Double)) {
+            self.x = x; self.y = y; self.z = z; self.quaternion = quaternion
+        }
+
         public static func == (l: Root, r: Root) -> Bool {
             l.x == r.x && l.y == r.y && l.z == r.z && l.quaternion == r.quaternion
         }
@@ -165,6 +170,28 @@ public struct DuckIntentClip: Equatable, Sendable {
         /// True when there is something to draw beyond the floor — what a UI
         /// checks before offering to show or hide the props.
         public var hasProps: Bool { !steps.isEmpty || !walls.isEmpty }
+    }
+
+    /// A clip assembled from somewhere other than the bundle — an imported
+    /// `.duckintent`, or a motion recorded by another owner and shared.
+    ///
+    /// UNCHECKED ON PURPOSE, and the caller has to have checked. The decoder
+    /// that reads a shared file is where the widths, the postures and the frame
+    /// count get validated, and it refuses with a message naming what was
+    /// wrong; putting a second set of preconditions here would turn that
+    /// message into a crash. The rule is the same one `DuckMove` follows:
+    /// untrusted numbers are validated at the door they come through, and the
+    /// type is built only once they pass.
+    public init(name: String, hz: Double, frames: [[Double]], roots: [Root],
+                netYaw: Double, loops: Bool, startsFrom: Posture, endsIn: Posture,
+                policy: String, authored: Bool, environment: Environment,
+                credit: String? = nil, telemetry: Telemetry = .none) {
+        self.name = name; self.hz = hz; self.frames = frames; self.roots = roots
+        self.netYaw = netYaw; self.loops = loops
+        self.startsFrom = startsFrom; self.endsIn = endsIn
+        self.policy = policy; self.authored = authored
+        self.environment = environment; self.credit = credit
+        self.telemetry = telemetry
     }
 
     /// A one-shot spans `count − 1` intervals: its last frame IS its end. A
