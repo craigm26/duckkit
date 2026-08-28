@@ -26,6 +26,10 @@ let package = Package(
         // to get one, and DuckKit's zero-dependency claim is the reason it
         // tests on a Pi. Take this one only if you have something to attest.
         .library(name: "DuckEvidence", targets: ["DuckEvidence"]),
+        // The robot's actual shape, 2.4 MB of it. Its own product because most
+        // things that need a duck do not need to DRAW one, and a soundboard
+        // should not carry a hundred thousand triangles to make a noise.
+        .library(name: "DuckVisual", targets: ["DuckVisual"]),
     ],
     dependencies: [
         // Ed25519 from swift-crypto, NOT CryptoKit: the same Curve25519.Signing
@@ -39,6 +43,11 @@ let package = Package(
             // Recorded walking, so a ghost duck has real motion to draw. Not a
             // dependency — a resource; DuckKit still links nothing.
             resources: [.copy("Resources/duck-trajectories.json")]
+        ),
+        .target(
+            name: "DuckVisual",
+            dependencies: ["DuckKit"],
+            resources: [.copy("Resources/duck-mesh.bin")]
         ),
         .target(
             name: "DuckEvidence",
@@ -61,5 +70,6 @@ let package = Package(
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "DuckEvidenceTests", dependencies: ["DuckEvidence", "DuckKit"]),
+        .testTarget(name: "DuckVisualTests", dependencies: ["DuckVisual"]),
     ]
 )

@@ -32,6 +32,7 @@ Then take the product you actually need — they are separate for a reason:
 | You want | Depend on | Brings |
 |---|---|---|
 | A walking duck, a voice, choreography, the protocol | `DuckKit` | nothing |
+| To draw the robot's actual shape | `DuckVisual` | 2.4 MB of triangles |
 | To sign, hash-chain, or attest something | `DuckEvidence` | swift-crypto → BoringSSL |
 
 In xcodegen, a package that vends two products needs both spelled out:
@@ -194,7 +195,7 @@ weights, same bytes in, same floats out to 1e-4.
 swift test
 ```
 
-Runs on Linux aarch64 (a Pi 5) and on macOS. 248 tests, no hardware, no network,
+Runs on Linux aarch64 (a Pi 5) and on macOS. 261 tests, no hardware, no network,
 no device — including the real trained policy, the synthesized voice, and the
 signing.
 
