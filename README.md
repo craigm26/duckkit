@@ -82,6 +82,7 @@ types that already exist, rather than a fourth that wraps them.
 | `DuckClock` | A fixed 50 Hz accumulator with a catch-up clamp, so the gait does not run at the panel's refresh rate |
 | `DuckRPC` | JSON-RPC 2.0 over NDJSON, with no transport underneath it. The framing is the hard part |
 | `DuckState` | The `robot.state` notification, decoded. Every field optional, because a missing block must never read as a zero |
+| `DuckToF` | The head's 8×8 depth sensor — `tof.frame` decoded, and ST's status byte kept three-way, because "nothing there" and "could not tell" are different facts |
 | `DuckStateReducer` | The stream reduced to cumulative integers — distance, falls, time upright — in micrometres, reproducibly |
 | `DuckSkill` | The five skills and the twelve presses, including what `robotd` refuses and why |
 | `DuckSound` | The seven wire tags, the one held tag, and the arithmetic of the hold protocol |
@@ -195,7 +196,7 @@ weights, same bytes in, same floats out to 1e-4.
 swift test
 ```
 
-Runs on Linux aarch64 (a Pi 5) and on macOS. 261 tests, no hardware, no network,
+Runs on Linux aarch64 (a Pi 5) and on macOS. 274 tests, no hardware, no network,
 no device — including the real trained policy, the synthesized voice, and the
 signing.
 
