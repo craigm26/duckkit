@@ -124,6 +124,97 @@ public struct DuckMove: Equatable, Sendable {
     /// Uses the same swap-and-negate as `DuckTrajectory`, which is right
     /// because the robot's home pose is exactly antisymmetric — every left
     /// joint is the negation of its right counterpart.
+    // MARK: - building one from data you did not write
+
+    public enum Invalid: Error, Equatable {
+        case empty
+        case wrongWidth(keyframe: Int, got: Int, expected: Int)
+        case timesNotIncreasing(keyframe: Int)
+        case negativeTime(keyframe: Int)
+        case outsideTravel(keyframe: Int, joint: String)
+
+        public var message: String {
+            switch self {
+            case .empty: return "A move needs at least one keyframe."
+            case .wrongWidth(let k, let got, let expected):
+                return "Keyframe \(k) has \(got) joints; the robot has \(expected)."
+                     + (got == expected - 1
+                        ? " A 14-wide pose is the policy's joints with the mouth left out — use `init(validatingPolicyPoses:)`."
+                        : "")
+            case .timesNotIncreasing(let k): return "Keyframe \(k) does not come after the one before it."
+            case .negativeTime(let k): return "Keyframe \(k) has a negative time."
+            case .outsideTravel(let k, let joint):
+                return "Keyframe \(k) puts \(joint) outside its travel."
+            }
+        }
+    }
+
+    /// A move from keyframes somebody else supplied.
+    ///
+    /// THROWS WHERE THE OTHER INITIALIZER TRAPS, and that difference is the
+    /// whole point. `init(name:keyframes:)` uses preconditions, which is right
+    /// for a move written as a literal in this package — a mistake there is a
+    /// bug and should stop the build's tests. It is exactly wrong for the cases
+    /// that actually matter now: a file somebody shared, a clip imported from
+    /// another owner, or a pose sequence drafted by a language model. Those are
+    /// untrusted by definition, and an authoring tool that crashes on a
+    /// malformed import is one nobody can use to import anything.
+    public init(validating name: String, keyframes: [Keyframe],
+                enforceTravel: Bool = true) throws {
+        guard !keyframes.isEmpty else { throw Invalid.empty }
+        for (index, frame) in keyframes.enumerated() {
+            guard frame.pose.count == DuckModel.jointCount else {
+                throw Invalid.wrongWidth(keyframe: index, got: frame.pose.count,
+                                         expected: DuckModel.jointCount)
+            }
+            guard frame.time >= 0 else { throw Invalid.negativeTime(keyframe: index) }
+            if index > 0, frame.time <= keyframes[index - 1].time {
+                throw Invalid.timesNotIncreasing(keyframe: index)
+            }
+            if enforceTravel {
+                for joint in 0..<DuckModel.jointCount {
+                    let range = DuckModel.jointRanges[joint]
+                    if frame.pose[joint] < range.lower - 1e-6
+                        || frame.pose[joint] > range.upper + 1e-6 {
+                        throw Invalid.outsideTravel(keyframe: index,
+                                                    joint: DuckModel.jointNames[joint])
+                    }
+                }
+            }
+        }
+        self.name = name
+        self.keyframes = keyframes
+    }
+
+    /// The same, from the 14-wide poses every exported intent file actually
+    /// carries.
+    ///
+    /// The authored moves on disk are POLICY-wide — fourteen joints, the mouth
+    /// left out, because the mouth is outside every policy's action space. Every
+    /// one of them would be rejected by a 15-wide check, so the format that
+    /// exists needs a door of its own rather than a caller who remembers to
+    /// insert a mouth angle at index nine.
+    public init(validatingPolicyPoses name: String,
+                times: [TimeInterval], poses: [[Double]],
+                mouth: Double = DuckModel.homePose[DuckModel.mouthIndex],
+                enforceTravel: Bool = true) throws {
+        guard times.count == poses.count else { throw Invalid.empty }
+        let frames = try zip(times, poses).enumerated().map { index, pair -> Keyframe in
+            let (time, pose) = pair
+            guard pose.count == DuckModel.policyJointCount else {
+                throw Invalid.wrongWidth(keyframe: index, got: pose.count,
+                                         expected: DuckModel.policyJointCount)
+            }
+            var full = [Double](repeating: 0, count: DuckModel.jointCount)
+            for slot in 0..<DuckModel.policyJointCount {
+                full[DuckModel.jointOfPolicySlot(slot)] = pose[slot]
+            }
+            full[DuckModel.mouthIndex] = mouth
+            return Keyframe(time: time, pose: full)
+        }
+        try self.init(validating: name, keyframes: frames, enforceTravel: enforceTravel)
+    }
+
     public func mirrored() -> DuckMove {
         DuckMove(name: name + "_mirrored",
                  keyframes: keyframes.map {

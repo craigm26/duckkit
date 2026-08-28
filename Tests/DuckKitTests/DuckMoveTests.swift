@@ -171,3 +171,81 @@ final class DuckMoveTests: XCTestCase {
         XCTAssertTrue(times.allSatisfy { $0 > 0 })
     }
 }
+
+/// Importing a move somebody else wrote. The existing initializer traps, which
+/// is right for a literal in this package and exactly wrong for a file, a
+/// shared clip, or a pose sequence a language model drafted.
+final class DuckMoveValidatingTests: XCTestCase {
+
+    private func pose(_ value: Double = 0) -> [Double] {
+        DuckModel.homePose.map { _ in value }
+    }
+
+    func testAGoodMoveIsAccepted() throws {
+        let move = try DuckMove(validating: "ok", keyframes: [
+            .init(time: 0.0, pose: DuckModel.homePose),
+            .init(time: 0.5, pose: DuckModel.homePose),
+        ])
+        XCTAssertEqual(move.keyframes.count, 2)
+        XCTAssertEqual(move.duration, 0.5, accuracy: 1e-12)
+    }
+
+    func testTheFailuresThrowRatherThanCrash() {
+        XCTAssertThrowsError(try DuckMove(validating: "e", keyframes: [])) {
+            XCTAssertEqual($0 as? DuckMove.Invalid, .empty)
+        }
+        XCTAssertThrowsError(try DuckMove(validating: "t", keyframes: [
+            .init(time: 0.5, pose: DuckModel.homePose),
+            .init(time: 0.5, pose: DuckModel.homePose),
+        ])) { XCTAssertEqual($0 as? DuckMove.Invalid, .timesNotIncreasing(keyframe: 1)) }
+    }
+
+    /// The exported intent files are all 14-wide, so this is the error a real
+    /// import actually hits — and the message has to point at the way out.
+    func testAFourteenWidePoseSaysWhichDoorToUse() {
+        let policyWide = [Double](repeating: 0, count: DuckModel.policyJointCount)
+        XCTAssertThrowsError(try DuckMove(validating: "w", keyframes: [
+            .init(time: 0, pose: policyWide),
+        ])) { error in
+            guard case DuckMove.Invalid.wrongWidth(_, let got, let expected) = error else {
+                return XCTFail("wrong error")
+            }
+            XCTAssertEqual(got, 14)
+            XCTAssertEqual(expected, 15)
+            XCTAssertTrue((error as! DuckMove.Invalid).message.contains("validatingPolicyPoses"),
+                          "the message must name the initializer that takes this shape")
+        }
+    }
+
+    /// And that door works on the shape the files carry.
+    func testPolicyWidePosesLoadAndPlaceTheMouthAtHome() throws {
+        let move = try DuckMove(validatingPolicyPoses: "exported",
+                                times: [0, 0.4],
+                                poses: [Array(policyJoints(DuckModel.homePose)),
+                                        Array(policyJoints(DuckModel.homePose))])
+        XCTAssertEqual(move.keyframes[0].pose.count, DuckModel.jointCount)
+        XCTAssertEqual(move.keyframes[0].pose[DuckModel.mouthIndex],
+                       DuckModel.homePose[DuckModel.mouthIndex],
+                       "a 14-wide file says nothing about the mouth, so it goes home")
+    }
+
+    /// A drafted pose that puts a joint through its own travel is refused by
+    /// name, so the author is told which joint rather than that something is
+    /// wrong somewhere.
+    func testAPoseOutsideTravelIsRefusedByJointName() {
+        var bad = DuckModel.homePose
+        bad[3] = DuckModel.jointRanges[3].upper + 1.0
+        XCTAssertThrowsError(try DuckMove(validating: "b", keyframes: [
+            .init(time: 0, pose: bad),
+        ])) { error in
+            guard case DuckMove.Invalid.outsideTravel(_, let joint) = error else {
+                return XCTFail("wrong error")
+            }
+            XCTAssertEqual(joint, DuckModel.jointNames[3])
+        }
+    }
+
+    private func policyJoints(_ all: [Double]) -> [Double] {
+        (0..<DuckModel.policyJointCount).map { all[DuckModel.jointOfPolicySlot($0)] }
+    }
+}
