@@ -61,9 +61,44 @@ public struct DuckIntentClip: Equatable, Sendable {
     /// True when the motion is a keyframe track riding on that policy rather
     /// than the policy's own output.
     public let authored: Bool
+    /// What the motion was performed against.
+    ///
+    /// A clip played in an empty void cannot be judged. `step_up` ends toppled
+    /// because it fails to climb A STAIR, and `wall_flip` pushes off A WALL —
+    /// without the prop on screen a viewer sees a duck falling over for no
+    /// reason and cannot tell a bad recording from a bad move. The ground is
+    /// always present because it is the single most useful piece of context:
+    /// it is what says whether the feet are on the floor.
+    public let environment: Environment
+
     /// Who contributed it, for display only. Provenance is decided by the
     /// policy's fingerprint, never by this string.
     public let credit: String?
+
+    /// The props a clip was recorded against, in the clip's own frame — the
+    /// same de-origined frame as `roots`, so a renderer draws the world and the
+    /// robot together without reconciling anything.
+    public struct Environment: Equatable, Sendable {
+        /// A block of the staircase. `top` is the height its upper face sits
+        /// at; it extends `halfHeight` below that, which is how a 10 mm step
+        /// still has a solid body under it rather than floating.
+        public struct Step: Equatable, Sendable {
+            public let x, y, top: Double
+            public let halfDepth, halfWidth, halfHeight: Double
+        }
+        public struct Wall: Equatable, Sendable {
+            public let x, y, halfThickness, height, halfLength: Double
+        }
+        public let ground: Bool
+        /// How far the world is rotated relative to the clip's frame.
+        public let yaw: Double
+        public let steps: [Step]
+        public let walls: [Wall]
+
+        /// True when there is something to draw beyond the floor — what a UI
+        /// checks before offering to show or hide the props.
+        public var hasProps: Bool { !steps.isEmpty || !walls.isEmpty }
+    }
 
     /// A one-shot spans `count − 1` intervals: its last frame IS its end. A
     /// loop spans `count`, because it hands back to its first frame.
@@ -115,6 +150,28 @@ public struct DuckIntentClip: Equatable, Sendable {
         return try decode(Data(contentsOf: url))
     }
 
+    static func environment(from raw: [String: Any]?) -> Environment {
+        guard let raw else { return Environment(ground: true, yaw: 0, steps: [], walls: []) }
+        let steps = (raw["steps"] as? [[String: Any]] ?? []).compactMap { s -> Environment.Step? in
+            guard let x = s["x"] as? Double, let y = s["y"] as? Double,
+                  let top = s["top"] as? Double else { return nil }
+            return Environment.Step(x: x, y: y, top: top,
+                                    halfDepth: s["halfDepth"] as? Double ?? 0.17,
+                                    halfWidth: s["halfWidth"] as? Double ?? 0.17,
+                                    halfHeight: s["halfHeight"] as? Double ?? 0.10)
+        }
+        let walls = (raw["walls"] as? [[String: Any]] ?? []).compactMap { w -> Environment.Wall? in
+            guard let x = w["x"] as? Double, let y = w["y"] as? Double else { return nil }
+            return Environment.Wall(x: x, y: y,
+                                    halfThickness: w["halfThickness"] as? Double ?? 0.025,
+                                    height: w["height"] as? Double ?? 0.6,
+                                    halfLength: w["halfLength"] as? Double ?? 1.5)
+        }
+        return Environment(ground: raw["ground"] as? Bool ?? true,
+                           yaw: raw["yaw"] as? Double ?? 0,
+                           steps: steps, walls: walls)
+    }
+
     static func decode(_ data: Data) throws -> [String: DuckIntentClip] {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let hz = root["hz"] as? Double,
@@ -141,6 +198,7 @@ public struct DuckIntentClip: Equatable, Sendable {
                 endsIn: Posture(rawValue: c["endsIn"] as? String ?? "") ?? .standing,
                 policy: c["policy"] as? String ?? "unknown",
                 authored: c["authored"] as? Bool ?? false,
+                environment: environment(from: c["environment"] as? [String: Any]),
                 credit: c["credit"] as? String)
         }
         return out

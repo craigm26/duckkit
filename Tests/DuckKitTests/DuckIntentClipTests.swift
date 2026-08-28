@@ -112,3 +112,58 @@ final class DuckIntentClipTests: XCTestCase {
         XCTAssertThrowsError(try DuckIntentClip.decode(Data("not json".utf8)))
     }
 }
+
+/// A clip played in an empty void cannot be judged, so every one carries the
+/// world it was performed against.
+final class DuckIntentClipEnvironmentTests: XCTestCase {
+
+    private func clips() throws -> [String: DuckIntentClip] { try DuckIntentClip.bundled() }
+
+    func testEveryClipHasGround() throws {
+        for (name, clip) in try clips() {
+            XCTAssertTrue(clip.environment.ground,
+                          "\(name) needs a floor — it is what says whether the feet are on it")
+        }
+    }
+
+    /// The four stair moves were recorded against a staircase, and without it
+    /// on screen step_up looks like a duck falling over for no reason.
+    func testTheStairMovesCarryTheirStaircase() throws {
+        let all = try clips()
+        for name in ["step_up", "lever_up", "riser_up", "climb"] {
+            let env = try XCTUnwrap(all[name]).environment
+            XCTAssertEqual(env.steps.count, 4, "\(name) was recorded against four steps")
+            XCTAssertTrue(env.hasProps)
+            // Each tread is higher than the last, which is what makes it a
+            // flight rather than four blocks in a row.
+            for (a, b) in zip(env.steps, env.steps.dropFirst()) {
+                XCTAssertGreaterThan(b.top, a.top, "\(name) steps must ascend")
+            }
+        }
+    }
+
+    func testWallFlipCarriesItsWall() throws {
+        let env = try XCTUnwrap(clips()["wall_flip"]).environment
+        XCTAssertEqual(env.walls.count, 1)
+        XCTAssertTrue(env.steps.isEmpty, "it flips off a wall, not a stair")
+    }
+
+    /// Clips with no prop say so, rather than carrying an empty staircase that
+    /// a renderer would have to special-case.
+    func testFlatFloorClipsHaveNoProps() throws {
+        for name in ["hold", "sit", "kick_left", "roulade"] {
+            let env = try XCTUnwrap(clips()[name]).environment
+            XCTAssertFalse(env.hasProps, "\(name) happens on flat ground")
+        }
+    }
+
+    /// The props live in the SAME de-origined frame as the roots. If they did
+    /// not, the staircase would end up behind the robot.
+    func testPropsAreNearTheDuckNotWhereMuJoCoPutThem() throws {
+        let clip = try XCTUnwrap(clips()["climb"])
+        for step in clip.environment.steps {
+            XCTAssertLessThan(abs(step.x), 2.0, "a step 1.3 m away in y would be the raw MuJoCo frame")
+            XCTAssertLessThan(abs(step.y), 2.0)
+        }
+    }
+}
