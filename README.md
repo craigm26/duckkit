@@ -21,6 +21,49 @@ That is the actual `alpha_walking.onnx` from Pollen's repo, running the actual
 61-float observation the robot's own daemon feeds it, at the robot's own 50 Hz.
 Not an animation of a duck walking — the trained network walking.
 
+## Using it
+
+```swift
+.package(url: "https://github.com/craigm26/duckkit.git", from: "1.0.0")
+```
+
+Then take the product you actually need — they are separate for a reason:
+
+| You want | Depend on | Brings |
+|---|---|---|
+| A walking duck, a voice, choreography, the protocol | `DuckKit` | nothing |
+| To sign, hash-chain, or attest something | `DuckEvidence` | swift-crypto → BoringSSL |
+
+In xcodegen, a package that vends two products needs both spelled out:
+
+```yaml
+packages:
+  DuckKit:
+    url: https://github.com/craigm26/duckkit.git
+    from: 1.0.0
+targets:
+  YourApp:
+    dependencies:
+      - package: DuckKit
+        product: DuckKit
+      - package: DuckKit
+        product: DuckEvidence   # only if you sign something
+```
+
+**Depend on it by tag, not by path.** This repo is public, so a URL dependency
+needs no deploy key and no credential on a rented build machine — which was the
+only argument for a sibling-path dependency, and it no longer holds. A tag also
+means an archive built today and one built in six months run the same policy.
+
+Two things that are *not* in here, deliberately. There is no `Journal`:
+OpenCastor's journal chains over a `Receipt`, which is a decision a robot's
+gateway actually signed, and letting a phone-minted diary entry wear that shape
+would be a lie about what happened. `DuckChain` moves the fold and leaves the
+ledger behind, and each consumer keeps its own namespace. And there is no
+`DuckBeak` type: the mouth is joint 9 in `DuckModel`, `DuckKinematics` gives you
+the `mouth_tip` site, and `DuckPerformance` decides how far open it is — three
+types that already exist, rather than a fourth that wraps them.
+
 ## What is in here
 
 ### DuckKit — the robot
