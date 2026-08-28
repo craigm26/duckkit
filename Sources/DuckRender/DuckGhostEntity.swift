@@ -62,7 +62,37 @@ public final class DuckGhostEntity: Entity {
 
     @MainActor public required init(from decoder: Decoder) throws { fatalError("not decodable") }
 
+    /// Put the robot where a recording says it was.
+    ///
+    /// THE ONE CALL SITE FOR AN OFFSET THAT IS EASY TO MISS AND OBVIOUS ONCE
+    /// SHIPPED. This entity's children come from
+    /// `DuckKinematics.bodyPoses(jointAngles:)`, which works in the MODEL's
+    /// world frame — the floor — with `trunk_base` already 120 mm up. A
+    /// recording's root, though, IS the trunk. Setting `position` straight from
+    /// it therefore adds the trunk height twice and draws the robot floating by
+    /// exactly 116 mm, which on a 250 mm machine looks like a hovercraft. Duck
+    /// Studio shipped a build doing precisely that.
+    ///
+    /// So placement lives here, once, rather than at every screen that wants to
+    /// draw a clip. `DuckKinematics.placement(forRoot:orientation:)` does the
+    /// arithmetic and ROTATES the offset, which matters the moment the robot
+    /// rolls: an unrotated subtraction would push an inverted duck through the
+    /// floor exactly when it is most visible.
+    public func place(root: DuckIntentClip.Root, jointAngles: [Double]) {
+        apply(jointAngles: jointAngles)
+        let quaternion = DuckQuaternion(w: root.quaternion.0, x: root.quaternion.1,
+                                        y: root.quaternion.2, z: root.quaternion.3)
+        let placement = DuckKinematics.placement(
+            forRoot: DuckVector(root.x, root.y, root.z), orientation: quaternion)
+        position = Self.rk(placement.position)
+        orientation = Self.rk(placement.orientation)
+    }
+
     /// Put every part where this set of joint angles says it is.
+    ///
+    /// LEAVES THE ENTITY ITSELF WHERE IT IS. This is the right call for a
+    /// bench, which has no root to honour, and the wrong one for a recording —
+    /// use `place(root:jointAngles:)` there.
     public func apply(jointAngles: [Double]) {
         let poses = DuckKinematics.bodyPoses(jointAngles: jointAngles)
         for (name, entity) in parts {

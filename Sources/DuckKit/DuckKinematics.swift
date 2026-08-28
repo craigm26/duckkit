@@ -109,6 +109,38 @@ public enum DuckKinematics {
     /// Poses for every body, keyed by body name, for 15 joint angles in
     /// standard joint order (the mouth is accepted and ignored — it is not in
     /// the walk model). The trunk sits at the model's rest height, 0.12 m.
+    /// Where `bodyPoses` puts the trunk, in the frame it works in.
+    ///
+    /// READ THIS BEFORE PLACING THE ROBOT ANYWHERE. `bodyPoses` does NOT return
+    /// trunk-relative poses. Its root is the parentless body taken verbatim
+    /// from the MJCF, which puts `trunk_base` at (0, 0, 0.12) — so the frame it
+    /// works in is the MODEL WORLD, whose origin is the FLOOR with the robot
+    /// standing 120 mm above it. An entity built by hanging these poses off a
+    /// single parent therefore has its origin ON THE FLOOR, not at the trunk.
+    ///
+    /// A recording's root, by contrast, IS the trunk: it is the free joint's
+    /// qpos for `trunk_base`. Setting an entity's position straight from a
+    /// recorded root adds this offset on top of the one already baked in, and
+    /// the robot is drawn floating by exactly the trunk height — 116 mm, which
+    /// on a 250 mm robot is unmistakable and was shipped anyway. Use
+    /// `placement(forRoot:)` rather than doing the arithmetic at a call site.
+    public static let trunkOriginInModelFrame = DuckVector(0.0, 0.0, 0.12)
+
+    /// Where to put an entity whose children came from `bodyPoses`, so that its
+    /// trunk lands on a recorded root.
+    ///
+    /// The entity's internal trunk sits at `trunkOriginInModelFrame` with
+    /// identity orientation, so to move that point onto `position` under
+    /// rotation `orientation` the entity itself goes to
+    /// `position − orientation·trunkOriginInModelFrame`. The rotation matters:
+    /// a duck mid-roulade is upside down, and subtracting an unrotated 120 mm
+    /// would push it through the floor exactly when it is most obvious.
+    public static func placement(forRoot position: DuckVector,
+                                 orientation: DuckQuaternion)
+        -> (position: DuckVector, orientation: DuckQuaternion) {
+        (position - orientation.rotate(trunkOriginInModelFrame), orientation)
+    }
+
     public static func bodyPoses(jointAngles: [Double]) -> [String: Pose] {
         precondition(jointAngles.count == DuckModel.jointCount, "expected all 15 joints")
         var poses: [String: Pose] = [:]
