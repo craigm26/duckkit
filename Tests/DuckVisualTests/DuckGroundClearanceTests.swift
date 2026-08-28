@@ -70,12 +70,22 @@ final class DuckGroundClearanceTests: XCTestCase {
         }
     }
 
-    /// And the sentence for the bug it exists to catch.
-    func testTheSummaryCallsOutFloating() {
+    /// And the sentence for the bug it exists to catch — plus the one it must
+    /// NOT call a bug. A toppled duck sinking through the floor is seven
+    /// bodies with no collision shape, not a fault, and colouring it as one
+    /// taught the reader that a correct render was broken.
+    func testOnlyFloatingIsReportedAsWrong() {
         XCTAssertTrue(DuckGroundClearance.summary(clearanceMetres: 0.1162)
                         .contains("nothing should be floating"))
-        XCTAssertTrue(DuckGroundClearance.summary(clearanceMetres: -0.025)
-                        .contains("into the ground"))
+        XCTAssertTrue(DuckGroundClearance.isWrong(clearanceMetres: 0.1162))
+
+        let sunk = DuckGroundClearance.summary(clearanceMetres: -0.025)
+        XCTAssertTrue(sunk.contains("through the floor"), sunk)
+        XCTAssertTrue(sunk.contains("no collision shape"), sunk)
+        XCTAssertTrue(sunk.hasPrefix("25 mm"), "the depth reads positive: \(sunk)")
+        XCTAssertFalse(DuckGroundClearance.isWrong(clearanceMetres: -0.025))
+
+        XCTAssertFalse(DuckGroundClearance.isWrong(clearanceMetres: 0.001))
     }
 
     /// It has to be cheap enough to run on every frame.

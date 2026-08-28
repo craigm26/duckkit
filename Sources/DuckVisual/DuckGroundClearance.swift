@@ -159,15 +159,30 @@ public struct DuckGroundClearance: Sendable {
     ///
     /// A bare "+116 mm" invites the reader to assume the robot is meant to be
     /// up there. Saying what zero means is what makes the number a check.
+    ///
+    /// ONLY FLOATING IS A PROBLEM. Dipping below the floor is expected — seven
+    /// of the fifteen drawn bodies have no collision geometry, so a duck lying
+    /// down rests on the parts that collide while a thigh or the neck passes
+    /// through — and colouring it as a fault taught the reader that a correct
+    /// render was broken. The first version of this string also blamed
+    /// "simplified collision shapes", which was wrong: every collision geom in
+    /// the model is a mesh sitting on its visual counterpart.
     public static func summary(clearanceMetres: Double) -> String {
         let mm = clearanceMetres * 1000
         if mm > 5 {
             return String(format: "%.0f mm off the ground — nothing should be floating.", mm)
         }
         if mm < -5 {
-            return String(format: "%.0f mm into the ground. The printed shell dips inside the "
-                        + "collision shape MuJoCo actually contacts.", mm)
+            return String(format: "%.0f mm through the floor, which is normal here: seven of the "
+                        + "fifteen drawn parts have no collision shape, so they are drawn and "
+                        + "cannot touch anything.", -mm)
         }
         return String(format: "%+.0f mm — on the floor.", mm)
+    }
+
+    /// Whether the number is reporting something WRONG, as opposed to merely
+    /// not zero. Floating is wrong; sinking is the meshes.
+    public static func isWrong(clearanceMetres: Double) -> Bool {
+        clearanceMetres > 0.005
     }
 }
