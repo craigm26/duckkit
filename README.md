@@ -84,6 +84,7 @@ types that already exist, rather than a fourth that wraps them.
 | `DuckSkill` | The five skills and the twelve presses, including what `robotd` refuses and why |
 | `DuckSound` | The seven wire tags, the one held tag, and the arithmetic of the hold protocol |
 | `DuckVoice` | Duck calls synthesized from arithmetic — no asset, no AVFoundation, no license question |
+| `DuckVoice.Personality` | What makes *this* duck sound like a different creature from that one. Ported from the robot's own seeded synth |
 | `DuckPerformance` | What the body does while it makes a noise. One set of curves, so the ghost and the robot are the same animal |
 
 ### DuckEvidence — the part that signs
@@ -95,6 +96,45 @@ types that already exist, rather than a fourth that wraps them.
 | `DuckSigning` | Ed25519 over canonical bytes — sign, verify, `kid(for:)` |
 | `SigningKeyStore` | Keychain on device, in-memory on Linux, with the device-local invariant assertable under `swift test` |
 | `DuckSoccerMatch` | A match as an append-only, hash-chained, signed record — a league table nobody can quietly edit |
+
+## Every duck sounds like itself
+
+The Microduck's voice is not a set of WAV files — there are none to vendor. It
+is a seedable synth: one integer derives a personality (register, harmonic tilt,
+nasality, vibrato, quackiness, tempo) and the robot seeds itself from its own
+SoC serial, so two Microducks on the same table sound like two animals.
+
+DuckKit does the same thing, from a port of upstream's derivation:
+
+```swift
+let duck = DuckVoice.Personality(identifier: robotSerial)   // or (seed: 42)
+let quack = DuckVoice.render(.chirp, part: .whole, seed: 1, as: duck)
+```
+
+`render(_:part:seed:)` without a personality still renders the tables as
+written, unchanged. Adding one bends them: the same tag stays recognisably that
+tag, and the animal underneath it changes.
+
+What is ported is the *derivation* — the generator (xoshiro256++ through
+splitmix64), the draw order, the trait ranges, the harmonic weighting, and the
+CRC-32 variant hash. Upstream's own note explains why that has to be exact:
+a robot's sound bank is re-rendered from its seed on every install, so **the
+generator is the voice**, and a change to the arithmetic re-voices the fleet
+silently. `DuckPersonalityTests` pins the stream, the CRC-32 of all seven tags,
+every trait of seed 1 and its harmonic weights against values computed by a
+*second, independent implementation* of the same spec — because a golden value
+copied out of the code under test only proves the code has not changed.
+
+What is **not** ported, and not claimed: byte-parity with a real robot's audio.
+The recipes that turn traits into samples are upstream's; DuckVoice's own
+oscillator stack renders them, and how it consumes each trait is ours. So the
+traits for a seed match and the couplings are ours. Nothing has been checked
+against a real bank, because no robot exists to check against yet.
+
+One invariant survives all of it: **a personality never changes a length.**
+Every buffer stays a whole number of 50 Hz control ticks, because
+`DuckPerformance` choreographs against those counts and a duck that stretched
+its own audio would slide out of its own gestures.
 
 ## Why DuckKit has no dependencies
 
@@ -152,7 +192,7 @@ weights, same bytes in, same floats out to 1e-4.
 swift test
 ```
 
-Runs on Linux aarch64 (a Pi 5) and on macOS. 174 tests, no hardware, no network,
+Runs on Linux aarch64 (a Pi 5) and on macOS. 199 tests, no hardware, no network,
 no device — including the real trained policy, the synthesized voice, and the
 signing.
 
