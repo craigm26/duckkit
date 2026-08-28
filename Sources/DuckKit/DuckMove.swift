@@ -159,14 +159,18 @@ public struct DuckMove: Equatable, Sendable {
     /// another owner, or a pose sequence drafted by a language model. Those are
     /// untrusted by definition, and an authoring tool that crashes on a
     /// malformed import is one nobody can use to import anything.
+    /// A `Keyframe` CANNOT CARRY A BAD WIDTH, so this door does not check for
+    /// one. Its initializer already traps on anything but fifteen joints, which
+    /// means untrusted numbers cannot legally reach this signature at all — a
+    /// width check here was unreachable code, and the test written to exercise
+    /// it crashed inside `Keyframe` before this function was entered. Untrusted
+    /// poses go through `init(validating:times:poses:)` or
+    /// `init(validatingPolicyPoses:times:poses:)`, both of which take raw
+    /// arrays and never construct a keyframe until the numbers have passed.
     public init(validating name: String, keyframes: [Keyframe],
                 enforceTravel: Bool = true) throws {
         guard !keyframes.isEmpty else { throw Invalid.empty }
         for (index, frame) in keyframes.enumerated() {
-            guard frame.pose.count == DuckModel.jointCount else {
-                throw Invalid.wrongWidth(keyframe: index, got: frame.pose.count,
-                                         expected: DuckModel.jointCount)
-            }
             guard frame.time >= 0 else { throw Invalid.negativeTime(keyframe: index) }
             if index > 0, frame.time <= keyframes[index - 1].time {
                 throw Invalid.timesNotIncreasing(keyframe: index)
@@ -184,6 +188,40 @@ public struct DuckMove: Equatable, Sendable {
         }
         self.name = name
         self.keyframes = keyframes
+    }
+
+    /// A move from raw poses somebody else supplied — the door untrusted data
+    /// actually comes through.
+    ///
+    /// FIFTEEN WIDE, checked here rather than by `Keyframe`, because
+    /// `Keyframe`'s own initializer traps: handing it a malformed pose to see
+    /// whether the move refuses it kills the process instead. Anything read
+    /// from a file, a share sheet or a model's output has to be validated
+    /// BEFORE it becomes a keyframe, and this is where that happens.
+    public init(validating name: String, times: [TimeInterval], poses: [[Double]],
+                enforceTravel: Bool = true) throws {
+        guard times.count == poses.count, !poses.isEmpty else { throw Invalid.empty }
+        for (index, pose) in poses.enumerated() {
+            guard pose.count == DuckModel.jointCount else {
+                throw Invalid.wrongWidth(keyframe: index, got: pose.count,
+                                         expected: DuckModel.jointCount)
+            }
+            guard times[index] >= 0 else { throw Invalid.negativeTime(keyframe: index) }
+            if index > 0, times[index] <= times[index - 1] {
+                throw Invalid.timesNotIncreasing(keyframe: index)
+            }
+            if enforceTravel {
+                for joint in 0..<DuckModel.jointCount {
+                    let range = DuckModel.jointRanges[joint]
+                    if pose[joint] < range.lower - 1e-6 || pose[joint] > range.upper + 1e-6 {
+                        throw Invalid.outsideTravel(keyframe: index,
+                                                    joint: DuckModel.jointNames[joint])
+                    }
+                }
+            }
+        }
+        self.name = name
+        self.keyframes = zip(times, poses).map { Keyframe(time: $0, pose: $1) }
     }
 
     /// The same, from the 14-wide poses every exported intent file actually

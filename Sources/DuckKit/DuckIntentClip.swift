@@ -75,6 +75,44 @@ public struct DuckIntentClip: Equatable, Sendable {
     /// policy's fingerprint, never by this string.
     public let credit: String?
 
+    /// What the policy emitted, what it was asked for, and how the trunk moved.
+    ///
+    /// WHY THE JOINT ANGLES ARE NOT ENOUGH. `frames` holds the robot's ACHIEVED
+    /// joint positions, and most of Pollen's reward terms are not written
+    /// against those: `action_rate_l2` differences the network's raw output,
+    /// and the two velocity-tracking terms compare a commanded twist against
+    /// the base's actual one. None of the three can be recovered afterwards —
+    /// a target that a travel stop clipped is indistinguishable from one the
+    /// policy never asked for, and the command is not a function of the pose at
+    /// all. So they are recorded, or they are honestly absent.
+    public struct Telemetry: Equatable, Sendable {
+        /// The network's fourteen outputs per tick, before the gait scales them
+        /// and before the travel stops clamp them.
+        public let actions: [[Double]]
+        /// (vx, vy, wz), as handed to the policy. What they MEAN is the
+        /// policy's business — a velocity for the walkers, a phase clock for
+        /// ground_pick, a flag for sitstand — so a reader must know which
+        /// policy produced the clip before treating these as a velocity.
+        public let commands: [[Double]]
+        /// The trunk's own twist in its own frame: (vx, vy, vz, wx, wy, wz).
+        public let twists: [[Double]]
+
+        public init(actions: [[Double]], commands: [[Double]], twists: [[Double]]) {
+            self.actions = actions; self.commands = commands; self.twists = twists
+        }
+
+        /// Nothing was recorded. TRUE for every clip written before format 3,
+        /// and the reason anything reading this has to say "not recorded"
+        /// rather than showing a column of zeros.
+        public var isEmpty: Bool {
+            actions.isEmpty && commands.isEmpty && twists.isEmpty
+        }
+
+        public static let none = Telemetry(actions: [], commands: [], twists: [])
+    }
+
+    public let telemetry: Telemetry
+
     /// The props a clip was recorded against, in the clip's own frame — the
     /// same de-origined frame as `roots`, so a renderer draws the world and the
     /// robot together without reconciling anything.
@@ -85,15 +123,44 @@ public struct DuckIntentClip: Equatable, Sendable {
         public struct Step: Equatable, Sendable {
             public let x, y, top: Double
             public let halfDepth, halfWidth, halfHeight: Double
+
+            public init(x: Double, y: Double, top: Double,
+                        halfDepth: Double, halfWidth: Double, halfHeight: Double) {
+                self.x = x; self.y = y; self.top = top
+                self.halfDepth = halfDepth; self.halfWidth = halfWidth
+                self.halfHeight = halfHeight
+            }
+
+            /// How far the top of this block stands above the top of another —
+            /// the number that decides whether a duck can get up onto it. The
+            /// robot has been MEASURED at a 10 mm ceiling, so this is the
+            /// figure any scene editor has to put in front of someone before
+            /// they build a staircase the robot cannot use.
+            public func riseAbove(_ other: Step?) -> Double { top - (other?.top ?? 0) }
         }
         public struct Wall: Equatable, Sendable {
             public let x, y, halfThickness, height, halfLength: Double
+
+            public init(x: Double, y: Double, halfThickness: Double,
+                        height: Double, halfLength: Double) {
+                self.x = x; self.y = y; self.halfThickness = halfThickness
+                self.height = height; self.halfLength = halfLength
+            }
         }
         public let ground: Bool
         /// How far the world is rotated relative to the clip's frame.
         public let yaw: Double
         public let steps: [Step]
         public let walls: [Wall]
+
+        public init(ground: Bool, yaw: Double, steps: [Step], walls: [Wall]) {
+            self.ground = ground; self.yaw = yaw; self.steps = steps; self.walls = walls
+        }
+
+        /// Bare floor — what a motion recorded with nothing in front of it was
+        /// performed against, and the starting point for a scene somebody
+        /// builds.
+        public static let bareFloor = Environment(ground: true, yaw: 0, steps: [], walls: [])
 
         /// True when there is something to draw beyond the floor — what a UI
         /// checks before offering to show or hide the props.
@@ -199,7 +266,14 @@ public struct DuckIntentClip: Equatable, Sendable {
                 policy: c["policy"] as? String ?? "unknown",
                 authored: c["authored"] as? Bool ?? false,
                 environment: environment(from: c["environment"] as? [String: Any]),
-                credit: c["credit"] as? String)
+                credit: c["credit"] as? String,
+                // ABSENT, NOT ZERO, on a format-2 file. A missing key here has
+                // to stay missing all the way to the screen: a reward panel
+                // that silently reads zeros would report a perfectly smooth
+                // policy for a recording that never measured smoothness.
+                telemetry: Telemetry(actions: c["actions"] as? [[Double]] ?? [],
+                                     commands: c["commands"] as? [[Double]] ?? [],
+                                     twists: c["twists"] as? [[Double]] ?? []))
         }
         return out
     }

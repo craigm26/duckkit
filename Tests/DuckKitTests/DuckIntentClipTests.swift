@@ -167,3 +167,40 @@ final class DuckIntentClipEnvironmentTests: XCTestCase {
         }
     }
 }
+
+// MARK: - format 3: what the policy emitted, not just what the robot did
+
+extension DuckIntentClipTests {
+
+    /// The three telemetry arrays are PARALLEL TO THE FRAMES or they are
+    /// useless: a reward term pairs the action at tick i with the pose at tick
+    /// i, and a short array shifts every pairing after the gap.
+    func testTelemetryIsParallelToTheFrames() throws {
+        let clips = try DuckIntentClip.bundled()
+        for (name, clip) in clips {
+            XCTAssertFalse(clip.telemetry.isEmpty, "\(name) was recorded before format 3")
+            XCTAssertEqual(clip.telemetry.actions.count, clip.frames.count, name)
+            XCTAssertEqual(clip.telemetry.commands.count, clip.frames.count, name)
+            XCTAssertEqual(clip.telemetry.twists.count, clip.frames.count, name)
+            for action in clip.telemetry.actions {
+                XCTAssertEqual(action.count, DuckModel.policyJointCount, name)
+            }
+            for twist in clip.telemetry.twists { XCTAssertEqual(twist.count, 6, name) }
+            for command in clip.telemetry.commands { XCTAssertEqual(command.count, 3, name) }
+        }
+    }
+
+    /// A format-2 file has to decode to ABSENT rather than to zeros. A reward
+    /// panel reading zeros would report a perfectly smooth policy for a
+    /// recording that never measured smoothness.
+    func testAnOlderRecordingHasNoTelemetryRatherThanZeroes() throws {
+        let json = """
+        {"hz":50,"clips":{"old":{"frames":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0]],
+        "roots":[[0,0,0.1,1,0,0,0]],"policy":"x.onnx"}}}
+        """
+        let clips = try DuckIntentClip.decode(Data(json.utf8))
+        let clip = try XCTUnwrap(clips["old"])
+        XCTAssertTrue(clip.telemetry.isEmpty)
+        XCTAssertTrue(clip.telemetry.actions.isEmpty)
+    }
+}

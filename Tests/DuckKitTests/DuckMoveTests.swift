@@ -204,9 +204,10 @@ final class DuckMoveValidatingTests: XCTestCase {
     /// import actually hits — and the message has to point at the way out.
     func testAFourteenWidePoseSaysWhichDoorToUse() {
         let policyWide = [Double](repeating: 0, count: DuckModel.policyJointCount)
-        XCTAssertThrowsError(try DuckMove(validating: "w", keyframes: [
-            .init(time: 0, pose: policyWide),
-        ])) { error in
+        // Through the RAW door. Wrapping this in a `Keyframe` first would trap
+        // inside `Keyframe.init` — which is exactly why the raw door exists.
+        XCTAssertThrowsError(try DuckMove(validating: "w", times: [0],
+                                          poses: [policyWide])) { error in
             guard case DuckMove.Invalid.wrongWidth(_, let got, let expected) = error else {
                 return XCTFail("wrong error")
             }
@@ -235,9 +236,8 @@ final class DuckMoveValidatingTests: XCTestCase {
     func testAPoseOutsideTravelIsRefusedByJointName() {
         var bad = DuckModel.homePose
         bad[3] = DuckModel.jointRanges[3].upper + 1.0
-        XCTAssertThrowsError(try DuckMove(validating: "b", keyframes: [
-            .init(time: 0, pose: bad),
-        ])) { error in
+        XCTAssertThrowsError(try DuckMove(validating: "b", times: [0],
+                                          poses: [bad])) { error in
             guard case DuckMove.Invalid.outsideTravel(_, let joint) = error else {
                 return XCTFail("wrong error")
             }
