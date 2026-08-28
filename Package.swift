@@ -34,7 +34,12 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0")
     ],
     targets: [
-        .target(name: "DuckKit"),
+        .target(
+            name: "DuckKit",
+            // Recorded walking, so a ghost duck has real motion to draw. Not a
+            // dependency — a resource; DuckKit still links nothing.
+            resources: [.copy("Resources/duck-trajectories.json")]
+        ),
         .target(
             name: "DuckEvidence",
             dependencies: [.product(name: "Crypto", package: "swift-crypto")]
