@@ -30,6 +30,12 @@ let package = Package(
         // things that need a duck do not need to DRAW one, and a soundboard
         // should not carry a hundred thousand triangles to make a noise.
         .library(name: "DuckVisual", targets: ["DuckVisual"]),
+        // The duck as a RealityKit entity. Apple-only by nature, and therefore
+        // entirely inside `#if canImport(RealityKit)` — on Linux it compiles to
+        // an empty module so `swift test` on the Pi is unaffected. It exists
+        // because OpenCastor and Duck Studio both need to draw the same robot,
+        // and a copy per app is a fork per app.
+        .library(name: "DuckRender", targets: ["DuckRender"]),
     ],
     dependencies: [
         // Ed25519 from swift-crypto, NOT CryptoKit: the same Curve25519.Signing
@@ -48,6 +54,10 @@ let package = Package(
             name: "DuckVisual",
             dependencies: ["DuckKit"],
             resources: [.copy("Resources/duck-mesh.bin")]
+        ),
+        .target(
+            name: "DuckRender",
+            dependencies: ["DuckKit", "DuckVisual"]
         ),
         .target(
             name: "DuckEvidence",

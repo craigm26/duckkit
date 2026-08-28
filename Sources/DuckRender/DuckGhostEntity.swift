@@ -1,0 +1,146 @@
+#if canImport(RealityKit)
+import RealityKit
+import Foundation
+import simd
+import DuckKit
+import DuckVisual
+#if canImport(UIKit)
+import UIKit
+#endif
+
+/// The Microduck, drawn with its own geometry and posed by its own kinematics.
+///
+/// SHARED BY EVERY AR SCREEN ON PURPOSE. The ghost, the soccer pitch and
+/// anything later all need the same duck; a second copy would be a second place
+/// for the coordinate conversion to be got wrong, and that error looks like a
+/// duck lying on its side rather than like a bug.
+///
+/// The meshes come from `DuckVisual` — Pollen's own parts under Apache-2.0, one
+/// mesh per body in that body's local frame. So this holds no skeleton of its
+/// own: it asks `DuckKinematics.bodyPoses(jointAngles:)` where each body is and
+/// puts that body's mesh there. The thing that decides where a foot goes is
+/// still the only thing that decides it.
+@MainActor
+public final class DuckGhostEntity: Entity {
+
+    private var parts: [String: ModelEntity] = [:]
+    /// Loaded once per process. Decoding is a few megabytes of triangles and
+    /// there is no reason two screens should each pay for it.
+    private static var cached: [DuckMesh.Body]?
+
+    /// How far the lowest point of the robot sits below the trunk origin in the
+    /// home pose, so the feet can be put on the floor rather than the trunk.
+    public private(set) var floorDrop: Float = 0
+
+    public required init() {
+        super.init()
+        let bodies = Self.geometry()
+
+        for body in bodies {
+            guard let mesh = Self.meshResource(for: body) else { continue }
+            var material = PhysicallyBasedMaterial()
+            material.baseColor = .init(tint: .init(red: CGFloat(body.rgba.r),
+                                                   green: CGFloat(body.rgba.g),
+                                                   blue: CGFloat(body.rgba.b),
+                                                   alpha: 1))
+            // The real robot is matte printed plastic with metal fasteners.
+            // Fully rough and non-metallic reads closer than RealityKit's
+            // default shine, which makes every part look wet.
+            material.roughness = 0.85
+            material.metallic = 0.0
+            let entity = ModelEntity(mesh: mesh, materials: [material])
+            addChild(entity)
+            parts[body.name] = entity
+        }
+
+        // Measure the stance once, in the home pose, so the anchor can be the
+        // floor. Doing it from the geometry rather than hardcoding 0.12 means
+        // it stays right if the model is ever re-exported.
+        floorDrop = Self.lowestPoint(bodies: bodies, jointAngles: DuckModel.homePose)
+        apply(jointAngles: DuckModel.homePose)
+    }
+
+    @MainActor public required init(from decoder: Decoder) throws { fatalError("not decodable") }
+
+    /// Put every part where this set of joint angles says it is.
+    public func apply(jointAngles: [Double]) {
+        let poses = DuckKinematics.bodyPoses(jointAngles: jointAngles)
+        for (name, entity) in parts {
+            guard let pose = poses[name] else { continue }
+            entity.position = Self.rk(pose.position)
+            entity.orientation = Self.rk(pose.orientation)
+        }
+    }
+
+    // MARK: - geometry
+
+    private static func geometry() -> [DuckMesh.Body] {
+        if let cached { return cached }
+        let loaded = (try? DuckMesh.bundled()) ?? []
+        cached = loaded
+        return loaded
+    }
+
+    private static func meshResource(for body: DuckMesh.Body) -> MeshResource? {
+        var descriptor = MeshDescriptor(name: body.name)
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        positions.reserveCapacity(body.vertexCount)
+        normals.reserveCapacity(body.vertexCount)
+        for i in stride(from: 0, to: body.positions.count, by: 3) {
+            // Straight into ARKit's frame here rather than at draw time: the
+            // vertices are baked once and the per-frame path then only moves
+            // transforms.
+            positions.append(SIMD3<Float>(body.positions[i],
+                                          body.positions[i + 2],
+                                          -body.positions[i + 1]))
+            normals.append(SIMD3<Float>(body.normals[i],
+                                        body.normals[i + 2],
+                                        -body.normals[i + 1]))
+        }
+        descriptor.positions = MeshBuffer(positions)
+        descriptor.normals = MeshBuffer(normals)
+        descriptor.primitives = .triangles(body.indices)
+        return try? MeshResource.generate(from: [descriptor])
+    }
+
+    /// The lowest vertex of the whole robot in a given pose, in ARKit's frame.
+    private static func lowestPoint(bodies: [DuckMesh.Body], jointAngles: [Double]) -> Float {
+        let poses = DuckKinematics.bodyPoses(jointAngles: jointAngles)
+        var lowest: Float = 0
+        for body in bodies {
+            guard let pose = poses[body.name] else { continue }
+            let origin = rk(pose.position)
+            let rotation = rk(pose.orientation)
+            // Sampling rather than every vertex: the answer only needs to be
+            // right to a millimetre and a foot has thousands of them.
+            for i in stride(from: 0, to: body.positions.count, by: 3 * 11) {
+                let local = SIMD3<Float>(body.positions[i],
+                                         body.positions[i + 2],
+                                         -body.positions[i + 1])
+                lowest = min(lowest, (origin + rotation.act(local)).y)
+            }
+        }
+        return -lowest
+    }
+
+    // MARK: - coordinates
+
+    /// MuJoCo (Z up, X forward, Y left) into RealityKit (Y up, -Z forward).
+    ///
+    /// A rotation of -90° about X, so handedness is preserved and there is no
+    /// mirroring to undo. One place, because getting it wrong is not a crash —
+    /// it is a duck walking sideways on its side.
+    public static func rk(_ v: DuckVector) -> SIMD3<Float> {
+        SIMD3<Float>(Float(v.x), Float(v.z), Float(-v.y))
+    }
+
+    /// The same change of basis for an orientation. A rotation of angle θ about
+    /// axis `a` is (cos θ/2, sin θ/2 · a); re-expressing it in a frame related
+    /// by rotation R is the same angle about `R·a`, so the scalar part is
+    /// untouched and the vector part takes exactly the swap above.
+    public static func rk(_ q: DuckQuaternion) -> simd_quatf {
+        simd_quatf(ix: Float(q.x), iy: Float(q.z), iz: Float(-q.y), r: Float(q.w))
+    }
+}
+#endif
