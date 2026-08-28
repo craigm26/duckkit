@@ -184,6 +184,49 @@ public struct DuckPolicy: Sendable {
         layers.reduce(0) { $0 + $1.inputs * $1.outputs + $1.outputs }
     }
 
+    /// Every trained number this policy holds, in one fixed byte order.
+    ///
+    /// WHAT THIS IS FOR: identity. Two ONNX files can differ in producer
+    /// string, initializer names, opset, or the order the graph lists its
+    /// nodes, and still be the same learned map; two files can also be
+    /// byte-identical everywhere except one weight, which is a different robot.
+    /// Hashing the FILE answers neither question. Hashing this answers both,
+    /// because it contains the parameters and nothing else.
+    ///
+    /// THE ORDER IS THE CONTRACT, so it is written down rather than left to
+    /// whatever `layers` happens to iterate as: the normalizer mean, then the
+    /// normalizer standard deviation, then for each layer outermost-first its
+    /// weights and then its biases. Every value is a little-endian IEEE-754
+    /// binary32 — the same 4 bytes on the Pi and the phone, with no host byte
+    /// order to get wrong. 197,896 floats, 791,584 bytes.
+    ///
+    /// THE HASHING IS DELIBERATELY NOT HERE. Digesting this needs swift-crypto,
+    /// swift-crypto brings BoringSSL, and DuckKit having no dependencies is
+    /// what lets the real policy run under `swift test` on a Pi with no
+    /// toolchain. So this product produces the bytes — which is robot truth and
+    /// belongs beside the parser that read them — and `DuckEvidence` turns them
+    /// into a fingerprint. A soundboard app gets the bytes for free and links
+    /// no TLS library.
+    public var canonicalParameterBytes: Data {
+        var out = Data()
+        out.reserveCapacity((mean.count + std.count + parameterCount) * 4)
+        func append(_ floats: [Float]) {
+            for value in floats {
+                // `bitPattern` is the IEEE-754 encoding; `littleEndian` pins
+                // the byte order so a big-endian host cannot silently produce
+                // a different fingerprint for the same policy.
+                withUnsafeBytes(of: value.bitPattern.littleEndian) { out.append(contentsOf: $0) }
+            }
+        }
+        append(mean)
+        append(std)
+        for layer in layers {
+            append(layer.weights)
+            append(layer.biases)
+        }
+        return out
+    }
+
     // ── reading a file ────────────────────────────────────────────────────
 
     /// Read an ONNX file's structure without deciding whether it is usable.

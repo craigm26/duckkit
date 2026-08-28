@@ -42,7 +42,13 @@ let package = Package(
         ),
         .target(
             name: "DuckEvidence",
-            dependencies: [.product(name: "Crypto", package: "swift-crypto")]
+            // DuckKit, and swift-crypto. The arrow points THIS WAY on purpose:
+            // DuckEvidence attests things DuckKit describes — a policy's
+            // parameters, a match, a room — so it has to see them, while DuckKit
+            // must never see this target, because that is what keeps a
+            // soundboard app from compiling BoringSSL to make a duck noise.
+            // Taking DuckKit costs nothing third-party: it has no dependencies.
+            dependencies: ["DuckKit", .product(name: "Crypto", package: "swift-crypto")]
         ),
         .testTarget(
             name: "DuckKitTests",
@@ -54,6 +60,6 @@ let package = Package(
             // robot runs.
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "DuckEvidenceTests", dependencies: ["DuckEvidence"]),
+        .testTarget(name: "DuckEvidenceTests", dependencies: ["DuckEvidence", "DuckKit"]),
     ]
 )

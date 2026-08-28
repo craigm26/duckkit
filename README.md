@@ -72,7 +72,7 @@ types that already exist, rather than a fourth that wraps them.
 |---|---|
 | `DuckModel` | Joint names and order, home pose, travel limits, action scale, the trained-in filter coefficients, the battery curve |
 | `DuckObservation` | The 61-float contract and the 13-value command block, with every upstream trap preserved |
-| `DuckPolicy` | A hand-written ONNX reader and an ELU multilayer perceptron. Loads the real policies, refuses anything else. Describes and differentiates them too |
+| `DuckPolicy` | A hand-written ONNX reader and an ELU multilayer perceptron. Loads the real policies, refuses anything else. Describes and differentiates them too, and serializes its parameters in one fixed order so they can be identified |
 | `DuckGait` | Raw policy output to joint targets: scale, low-pass, travel stops that are named rather than silent |
 | `DuckKinematics` | Forward kinematics over the robot's MuJoCo chain. Every body and named site, in metres |
 | `DuckSimulation` | The 50 Hz loop — observation, policy, targets, observation |
@@ -97,6 +97,7 @@ types that already exist, rather than a fourth that wraps them.
 | `DuckSigning` | Ed25519 over canonical bytes — sign, verify, `kid(for:)` |
 | `SigningKeyStore` | Keychain on device, in-memory on Linux, with the device-local invariant assertable under `swift test` |
 | `DuckSoccerMatch` | A match as an append-only, hash-chained, signed record — a league table nobody can quietly edit |
+| `DuckPolicy.fingerprint` | Which policy actually ran: SHA-256 over the parameters, not the file |
 
 ## Every duck sounds like itself
 
@@ -193,12 +194,15 @@ weights, same bytes in, same floats out to 1e-4.
 swift test
 ```
 
-Runs on Linux aarch64 (a Pi 5) and on macOS. 239 tests, no hardware, no network,
+Runs on Linux aarch64 (a Pi 5) and on macOS. 248 tests, no hardware, no network,
 no device — including the real trained policy, the synthesized voice, and the
 signing.
 
 The two products are tested apart, `DuckKitTests` against `DuckKit` alone, so a
 dependency creeping into DuckKit fails the build rather than passing quietly.
+`DuckEvidence` does depend on `DuckKit` — it attests things DuckKit describes, so
+it has to see them — and that direction costs nothing, because DuckKit brings
+nothing with it. The arrow never points the other way.
 
 ## License and provenance
 
