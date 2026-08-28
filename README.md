@@ -1,8 +1,12 @@
 # DuckKit
 
 The [Pollen Robotics Microduck](https://github.com/pollen-robotics/microduck), as
-pure Swift. Zero dependencies, runs the robot's real trained policies, and tests
-on Linux.
+pure Swift. Runs the robot's real trained policies, and tests on Linux.
+
+Two products. **DuckKit** has zero dependencies — the robot, its policies, its
+protocol, its voice and its choreography. **DuckEvidence** takes swift-crypto and
+is the part that signs things. An app that just wants a walking duck does not
+link BoringSSL to get one.
 
 ```swift
 let policy = try DuckPolicy.load(contentsOf: walkingONNX)
@@ -19,22 +23,42 @@ Not an animation of a duck walking — the trained network walking.
 
 ## What is in here
 
+### DuckKit — the robot
+
 | | |
 |---|---|
 | `DuckModel` | Joint names and order, home pose, travel limits, action scale, the trained-in filter coefficients, the battery curve |
 | `DuckObservation` | The 61-float contract and the 13-value command block, with every upstream trap preserved |
-| `DuckPolicy` | A hand-written ONNX reader and an ELU multilayer perceptron. Loads the real policies, refuses anything else |
+| `DuckPolicy` | A hand-written ONNX reader and an ELU multilayer perceptron. Loads the real policies, refuses anything else. Describes and differentiates them too |
 | `DuckGait` | Raw policy output to joint targets: scale, low-pass, travel stops that are named rather than silent |
 | `DuckKinematics` | Forward kinematics over the robot's MuJoCo chain. Every body and named site, in metres |
 | `DuckSimulation` | The 50 Hz loop — observation, policy, targets, observation |
 | `DuckSceneMJCF` | A captured room written as a deterministic MuJoCo scene |
+| `DuckClock` | A fixed 50 Hz accumulator with a catch-up clamp, so the gait does not run at the panel's refresh rate |
+| `DuckRPC` | JSON-RPC 2.0 over NDJSON, with no transport underneath it. The framing is the hard part |
+| `DuckState` | The `robot.state` notification, decoded. Every field optional, because a missing block must never read as a zero |
+| `DuckStateReducer` | The stream reduced to cumulative integers — distance, falls, time upright — in micrometres, reproducibly |
+| `DuckSkill` | The five skills and the twelve presses, including what `robotd` refuses and why |
+| `DuckSound` | The seven wire tags, the one held tag, and the arithmetic of the hold protocol |
+| `DuckVoice` | Duck calls synthesized from arithmetic — no asset, no AVFoundation, no license question |
+| `DuckPerformance` | What the body does while it makes a noise. One set of curves, so the ghost and the robot are the same animal |
 
-## Why it has no dependencies
+### DuckEvidence — the part that signs
 
-Everything here is Foundation and arithmetic. That is not minimalism for its own
-sake: it is what lets `swift test` run the real policy on a Raspberry Pi and get
-the same floats an iPhone will, with no toolchain, no accelerator and no device
-in the way.
+| | |
+|---|---|
+| `CanonicalJSON` | A JSON value model that keeps the int/float distinction canonical bytes depend on, identically on Linux and Apple |
+| `DuckChain` | The fold, and only the fold: `head₀ = "GENESIS"`, `headᵢ = sha256(headᵢ₋₁ ‖ canonical(recordᵢ))` |
+| `DuckSigning` | Ed25519 over canonical bytes — sign, verify, `kid(for:)` |
+| `SigningKeyStore` | Keychain on device, in-memory on Linux, with the device-local invariant assertable under `swift test` |
+| `DuckSoccerMatch` | A match as an append-only, hash-chained, signed record — a league table nobody can quietly edit |
+
+## Why DuckKit has no dependencies
+
+Everything in DuckKit is Foundation and arithmetic. That is not minimalism for
+its own sake: it is what lets `swift test` run the real policy on a Raspberry Pi
+and get the same floats an iPhone will, with no toolchain, no accelerator and no
+device in the way.
 
 Two decisions follow from it. `DuckPolicy` parses the ONNX protobuf by hand
 rather than taking onnxruntime, because every shipped alpha policy is the same
@@ -53,6 +77,18 @@ multiplies.
 `DuckPolicy` validates at load, never at inference — a file with the wrong op
 sequence, a transposed weight or an unexpected width is refused while nothing is
 moving, which is the rule the robot's own runtime follows.
+
+It is also why signing lives next door rather than here. Ed25519 needs
+swift-crypto, swift-crypto brings BoringSSL, and a soundboard should not compile
+a TLS library to make a duck noise. So `DuckEvidence` is a separate product with
+that one dependency, and anything in DuckKit that wants to be attested — the
+policy weight fingerprint, for instance — is reached from there as an extension.
+The cost is one extra import for the apps that sign, and nothing at all for the
+apps that do not.
+
+`DuckEvidence` uses swift-crypto rather than CryptoKit for the same reason
+DuckKit uses no packages: the same `Curve25519.Signing` API compiles on Linux, so
+the signer under `swift test` on the Pi is the signer on the phone.
 
 ## The numbers are not ours
 
@@ -73,7 +109,12 @@ weights, same bytes in, same floats out to 1e-4.
 swift test
 ```
 
-Runs on Linux aarch64 (a Pi 5) and on macOS. 41 tests, no hardware, no network.
+Runs on Linux aarch64 (a Pi 5) and on macOS. 174 tests, no hardware, no network,
+no device — including the real trained policy, the synthesized voice, and the
+signing.
+
+The two products are tested apart, `DuckKitTests` against `DuckKit` alone, so a
+dependency creeping into DuckKit fails the build rather than passing quietly.
 
 ## License and provenance
 

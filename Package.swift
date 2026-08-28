@@ -20,10 +20,25 @@ let package = Package(
     name: "DuckKit",
     platforms: [.iOS(.v17), .macOS(.v13)],
     products: [
-        .library(name: "DuckKit", targets: ["DuckKit"])
+        .library(name: "DuckKit", targets: ["DuckKit"]),
+        // Signing, canonical bytes and hash chains. A SEPARATE product on
+        // purpose: an app that wants a walking duck should not link BoringSSL
+        // to get one, and DuckKit's zero-dependency claim is the reason it
+        // tests on a Pi. Take this one only if you have something to attest.
+        .library(name: "DuckEvidence", targets: ["DuckEvidence"]),
+    ],
+    dependencies: [
+        // Ed25519 from swift-crypto, NOT CryptoKit: the same Curve25519.Signing
+        // API, but one that compiles on Linux, so the signer under `swift test`
+        // on the Pi is the signer on the phone. Used only by DuckEvidence.
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0")
     ],
     targets: [
         .target(name: "DuckKit"),
+        .target(
+            name: "DuckEvidence",
+            dependencies: [.product(name: "Crypto", package: "swift-crypto")]
+        ),
         .testTarget(
             name: "DuckKitTests",
             dependencies: ["DuckKit"],
@@ -33,6 +48,7 @@ let package = Package(
             // one — only the real weights can show that this runs what the
             // robot runs.
             resources: [.copy("Fixtures")]
-        )
+        ),
+        .testTarget(name: "DuckEvidenceTests", dependencies: ["DuckEvidence"]),
     ]
 )
