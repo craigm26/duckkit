@@ -77,6 +77,7 @@ types that already exist, rather than a fourth that wraps them.
 | `DuckKinematics` | Forward kinematics over the robot's MuJoCo chain. Every body and named site, in metres |
 | `DuckSimulation` | The 50 Hz loop — observation, policy, targets, observation |
 | `DuckSceneMJCF` | A captured room written as a deterministic MuJoCo scene |
+| `DuckRoomReduction` | What a scanner saw, reduced to that room. Y-up to Z-up, and the floor is the lowest surface rather than the largest |
 | `DuckClock` | A fixed 50 Hz accumulator with a catch-up clamp, so the gait does not run at the panel's refresh rate |
 | `DuckRPC` | JSON-RPC 2.0 over NDJSON, with no transport underneath it. The framing is the hard part |
 | `DuckState` | The `robot.state` notification, decoded. Every field optional, because a missing block must never read as a zero |
@@ -192,7 +193,7 @@ weights, same bytes in, same floats out to 1e-4.
 swift test
 ```
 
-Runs on Linux aarch64 (a Pi 5) and on macOS. 199 tests, no hardware, no network,
+Runs on Linux aarch64 (a Pi 5) and on macOS. 239 tests, no hardware, no network,
 no device — including the real trained policy, the synthesized voice, and the
 signing.
 
