@@ -66,9 +66,19 @@ public enum DuckSceneMJCF {
         lines.append("  <compiler angle=\"radian\" autolimits=\"true\" />")
         lines.append("  <include file=\"robot_walk.xml\" />")
         lines.append("  <worldbody>")
+        // THE RENDERED FLOOR IS GROWN TO CONTAIN THE FURNITURE, and only the
+        // rendered one. A MuJoCo plane is an infinite half-space for collision
+        // — its size attribute drives rendering alone — so this changes no
+        // physics whatsoever. It exists because a real scan routinely reports a
+        // tabletop wider than the patch of carpet the phone actually saw, and a
+        // scene whose sofa hangs off the edge of the world looks broken in a way
+        // that sends people hunting for a bug in the geometry. `floorHalfX/Y`
+        // stay as measured, because that is the honest answer to "how much floor
+        // did I scan" and it is what the app reports.
+        let (renderX, renderY) = renderedFloor(capture)
         lines.append(String(
             format: "    <geom name=\"floor\" type=\"plane\" size=\"%@ %@ 0.05\" rgba=\"0.9 0.9 0.9 1\" />",
-            number(capture.floorHalfX), number(capture.floorHalfY)))
+            number(renderX), number(renderY)))
         for obstacle in capture.obstacles.sorted(by: { $0.name < $1.name }) {
             let halfX = number(obstacle.size.x / 2)
             let halfY = number(obstacle.size.y / 2)
@@ -82,6 +92,28 @@ public enum DuckSceneMJCF {
         lines.append("  </worldbody>")
         lines.append("</mujoco>")
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// How big the floor has to be drawn for every obstacle to sit on it.
+    ///
+    /// The half-diagonal is used rather than the half-extent because obstacles
+    /// carry a yaw, and a rotated box reaches further than its own half-width.
+    /// Bounding the rotation rather than computing it keeps this to one line
+    /// and errs outward, which is the safe direction for a number whose only
+    /// job is to make the picture contain the objects.
+    static func renderedFloor(_ capture: Capture) -> (Double, Double) {
+        var x = capture.floorHalfX
+        var y = capture.floorHalfY
+        for obstacle in capture.obstacles {
+            let reach = (obstacle.size.x * obstacle.size.x
+                         + obstacle.size.y * obstacle.size.y).squareRoot() / 2
+            x = max(x, abs(obstacle.center.x) + reach)
+            y = max(y, abs(obstacle.center.y) + reach)
+        }
+        // Rounded, because a square root reintroduces exactly the false
+        // precision the measurements were quantized to remove — and this is a
+        // rendering bound, where a millimetre either way means nothing.
+        return ((x * 1000).rounded(.up) / 1000, (y * 1000).rounded(.up) / 1000)
     }
 
     /// Six significant decimals, no scientific notation, no locale — a

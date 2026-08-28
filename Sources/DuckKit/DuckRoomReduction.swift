@@ -91,6 +91,15 @@ public enum DuckRoomReduction {
         planes: [ScannedPlane],
         namePrefixes: (horizontal: String, vertical: String) = ("surface", "wall")
     ) throws -> DuckSceneMJCF.Capture {
+        // SORT BEFORE NAMING. Obstacle names carry the index they were found
+        // at, and `DuckSceneMJCF` sorts its output by name to be deterministic
+        // — which is worth nothing if the names themselves came from an
+        // arbitrary order. The caller's planes arrive from a dictionary keyed
+        // by anchor id, so `values` is in no order at all: the same room
+        // scanned twice produced surface_01/wall_00/wall_02 one run and a
+        // different assignment the next, and a scene that renames its furniture
+        // between exports cannot be diffed against itself.
+        let planes = planes.sorted(by: stableOrder)
         let horizontals = planes.filter(\.isHorizontal)
         guard !horizontals.isEmpty else { throw Failure.noHorizontalSurface }
 
@@ -113,17 +122,42 @@ public enum DuckRoomReduction {
 
             obstacles.append(DuckSceneMJCF.Obstacle(
                 name: name(prefixes: namePrefixes, isHorizontal: plane.isHorizontal, index: index),
-                center: (x: plane.x - floor.x,
-                         y: -(plane.z - floor.z),
-                         z: plane.y - floor.y),
-                size: size,
-                yaw: plane.yaw))
+                center: (x: quantized(plane.x - floor.x),
+                         y: quantized(-(plane.z - floor.z)),
+                         z: quantized(plane.y - floor.y)),
+                size: (x: quantized(size.x), y: quantized(size.y), z: quantized(size.z)),
+                yaw: quantized(plane.yaw)))
         }
 
         return DuckSceneMJCF.Capture(
-            floorHalfX: floor.extentX / 2,
-            floorHalfY: floor.extentZ / 2,
+            floorHalfX: quantized(floor.extentX / 2),
+            floorHalfY: quantized(floor.extentZ / 2),
             obstacles: obstacles)
+    }
+
+    /// A total order that does not depend on how the caller stored things.
+    ///
+    /// Walls after surfaces, then by height, then by position, then by size.
+    /// Every field is compared, so two planes only tie when they are the same
+    /// rectangle — at which point either order gives the same scene.
+    static func stableOrder(_ a: ScannedPlane, _ b: ScannedPlane) -> Bool {
+        if a.isHorizontal != b.isHorizontal { return a.isHorizontal && !b.isHorizontal }
+        let keysA = [a.y, a.x, a.z, a.extentX, a.extentZ, a.yaw]
+        let keysB = [b.y, b.x, b.z, b.extentX, b.extentZ, b.yaw]
+        for (l, r) in zip(keysA, keysB) where l != r { return l < r }
+        return false
+    }
+
+    /// Three decimal places: millimetres for a length, about 0.06° for the yaw.
+    ///
+    /// A plane estimate from a phone is good to a centimetre or two on a good
+    /// day, so `0.332041` claims micron precision the measurement does not
+    /// have. Worse than merely untidy: a reader comparing two scans sees six
+    /// digits change and cannot tell noise from movement. This is one order
+    /// finer than the instrument — honest, and still exact for the round
+    /// numbers ARKit does report.
+    static func quantized(_ value: Double) -> Double {
+        (value * 1000).rounded() / 1000
     }
 
     /// Zero-padded so the names sort the way a person reads them —

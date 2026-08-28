@@ -107,7 +107,9 @@ final class DuckRoomReductionTests: XCTestCase {
         let capture = try DuckRoomReduction.reduce(planes: [
             .init(x: 0, y: 0, z: 0, extentX: side, extentZ: side, isHorizontal: true)
         ])
-        XCTAssertEqual(capture.floorHalfX, side / 2, accuracy: 1e-12)
+        // Rounded to the millimetre like every other measurement, so this is
+        // 0.177 rather than 0.1767766952966369.
+        XCTAssertEqual(capture.floorHalfX, 0.177, accuracy: 1e-12)
         XCTAssertTrue(capture.obstacles.isEmpty)
     }
 
@@ -130,5 +132,87 @@ final class DuckRoomReductionTests: XCTestCase {
         XCTAssertTrue(xml.contains("name=\"floor\""))
         XCTAssertTrue(xml.contains("surface_01"), "the table survived the round trip")
         XCTAssertTrue(xml.contains("wall_02"), "and so did the wall")
+    }
+
+    // ── found on a real phone, 2026-08-28 ──────────────────────────────
+
+    /// Names must not depend on the order the caller happened to store planes
+    /// in. The app keeps them in a dictionary keyed by anchor id, so `values`
+    /// arrives in no order at all — and a scene that renames its furniture
+    /// between exports cannot be diffed against itself.
+    func testNamingDoesNotDependOnInputOrder() throws {
+        let planes = room()
+        let forward = try DuckRoomReduction.reduce(planes: planes)
+        let backward = try DuckRoomReduction.reduce(planes: planes.reversed())
+        XCTAssertEqual(forward.obstacles.map(\.name), backward.obstacles.map(\.name),
+                       "the same room must name its furniture the same way")
+        for (a, b) in zip(forward.obstacles, backward.obstacles) {
+            XCTAssertEqual(a.center.x, b.center.x, accuracy: 1e-12, a.name)
+            XCTAssertEqual(a.size.z, b.size.z, accuracy: 1e-12, a.name)
+        }
+    }
+
+    /// A shuffle is the real case — dictionary order is arbitrary, not merely
+    /// reversed — so try a few and demand they all agree.
+    func testEveryPermutationGivesTheSameScene() throws {
+        let expected = DuckSceneMJCF.scene(from: try DuckRoomReduction.reduce(planes: room()))
+        for _ in 0..<12 {
+            let shuffled = room().shuffled()
+            let actual = DuckSceneMJCF.scene(from: try DuckRoomReduction.reduce(planes: shuffled))
+            XCTAssertEqual(actual, expected, "a shuffled scan produced a different scene")
+        }
+    }
+
+    /// A phone reports a plane to a centimetre or two. Emitting `0.332041`
+    /// claims microns, and a reader comparing two scans then sees six digits
+    /// move and cannot tell noise from furniture.
+    func testMeasurementsAreRoundedToMillimetres() throws {
+        let capture = try DuckRoomReduction.reduce(planes: [
+            .init(x: 0, y: 0, z: 0, extentX: 0.6640821, extentZ: 1.3374361, isHorizontal: true),
+            .init(x: 0.1023391, y: 0.0772283, z: 0.0526556,
+                  extentX: 0.7303762, extentZ: 1.0111641, yaw: 0.1490283, isHorizontal: true),
+        ])
+        XCTAssertEqual(capture.floorHalfX, 0.332, accuracy: 1e-12)
+        XCTAssertEqual(capture.floorHalfY, 0.669, accuracy: 1e-12)
+        let box = try XCTUnwrap(capture.obstacles.first)
+        XCTAssertEqual(box.center.x, 0.102, accuracy: 1e-12)
+        XCTAssertEqual(box.center.z, 0.077, accuracy: 1e-12)
+        XCTAssertEqual(box.yaw, 0.149, accuracy: 1e-12)
+        // And the emitted text carries no more digits than were measured. Note
+        // this cannot assert the floor line reads 0.332: the DRAWN floor grows
+        // to contain the table, which is a separate deliberate behaviour. The
+        // invariant that actually matters is that nothing anywhere claims more
+        // than millimetre precision.
+        let xml = DuckSceneMJCF.scene(from: capture)
+        XCTAssertFalse(xml.contains("0.332041"), "the false precision is gone")
+        for match in xml.split(whereSeparator: { " \t\n\"=<>/".contains($0) }) {
+            guard let dot = match.firstIndex(of: "."),
+                  match.allSatisfy({ $0.isNumber || $0 == "." || $0 == "-" }) else { continue }
+            let decimals = match.distance(from: match.index(after: dot), to: match.endIndex)
+            // Four, not three: a box's HALF-extent is half of a
+            // millimetre-rounded measurement, so 1.011 m wide is exactly
+            // 0.5055 half-wide. That fourth digit is arithmetic, not a claim
+            // about the instrument. Six digits would be the claim.
+            XCTAssertLessThanOrEqual(decimals, 4,
+                                     "\(match) claims precision the phone does not have")
+        }
+    }
+
+    /// A scan routinely finds a tabletop wider than the patch of carpet the
+    /// phone saw, and furniture hanging off the edge of the world looks like a
+    /// geometry bug. The floor is DRAWN big enough to hold everything; the
+    /// measured extent is untouched, because that is what the app reports.
+    func testTheDrawnFloorContainsTheFurniture() throws {
+        let capture = try DuckRoomReduction.reduce(planes: [
+            .init(x: 0, y: 0, z: 0, extentX: 0.66, extentZ: 1.33, isHorizontal: true),
+            .init(x: 0, y: 0.08, z: 0, extentX: 0.73, extentZ: 1.01, isHorizontal: true),
+        ])
+        XCTAssertEqual(capture.floorHalfX, 0.33, accuracy: 1e-9,
+                       "the MEASURED floor is what was scanned and does not grow")
+        let (renderX, renderY) = DuckSceneMJCF.renderedFloor(capture)
+        let table = try XCTUnwrap(capture.obstacles.first)
+        XCTAssertGreaterThanOrEqual(renderX, abs(table.center.x) + table.size.x / 2)
+        XCTAssertGreaterThanOrEqual(renderY, abs(table.center.y) + table.size.y / 2)
+        XCTAssertGreaterThan(renderX, capture.floorHalfX, "it had to grow for this room")
     }
 }
