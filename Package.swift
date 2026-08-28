@@ -49,7 +49,11 @@ let package = Package(
             // Recorded walking, so a ghost duck has real motion to draw. Not a
             // dependency — a resource; DuckKit still links nothing.
             resources: [.copy("Resources/duck-trajectories.json"),
-                        .copy("Resources/duck-intent-clips.json")]
+                        .copy("Resources/duck-intent-clips.json"),
+                        // How often each motion actually works, measured by
+                        // repeated rollout under Pollen's own randomisation
+                        // ranges. A recording is one run and cannot carry a rate.
+                        .copy("Resources/intent-success.json")]
         ),
         .target(
             name: "DuckVisual",

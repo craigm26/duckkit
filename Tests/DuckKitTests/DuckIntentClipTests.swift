@@ -204,3 +204,52 @@ extension DuckIntentClipTests {
         XCTAssertTrue(clip.telemetry.actions.isEmpty)
     }
 }
+
+// MARK: - a rate is not something a recording can carry
+
+final class DuckIntentSuccessTests: XCTestCase {
+
+    func testEveryRolledOutIntentIsAlsoInTheCorpus() throws {
+        let success = try DuckIntentSuccess.bundled()
+        let clips = try DuckIntentClip.bundled()
+        XCTAssertGreaterThan(success.intents.count, 0)
+        for name in success.intents.keys {
+            XCTAssertNotNil(clips[name], "\(name) has a rate and no recording")
+        }
+    }
+
+    /// The rates must be counts of the rollouts actually performed — a rate
+    /// over zero runs is not a rate, and one over more successes than runs is
+    /// a decoding bug that would read as a very good policy.
+    func testTheCountsAreWithinTheRollouts() throws {
+        for (name, outcome) in try DuckIntentSuccess.bundled().intents {
+            XCTAssertGreaterThan(outcome.rollouts, 0, name)
+            XCTAssertLessThanOrEqual(outcome.achieves, outcome.rollouts, name)
+            XCTAssertLessThanOrEqual(outcome.repeats, outcome.rollouts, name)
+            XCTAssertFalse(outcome.criterion.isEmpty,
+                           "\(name) has a rate with no stated criterion")
+        }
+    }
+
+    /// The randomisation is quoted from Pollen's config, and the app shows it
+    /// beside the rate — a robustness number with no distribution attached is
+    /// not a measurement of anything.
+    func testTheDistributionIsNamedAndAttributed() throws {
+        let success = try DuckIntentSuccess.bundled()
+        XCTAssertTrue(success.randomisation.source.contains("microduck_rl"))
+        XCTAssertEqual(success.randomisation.lines.count, 4)
+        XCTAssertTrue(success.randomisation.lines.contains { $0.contains("Footpad friction") })
+    }
+
+    /// The whole reason for two rates: a stair move ends upright reliably and
+    /// gets up the flight never, and one number cannot say both.
+    func testAStairMoveRepeatsWithoutAchieving() throws {
+        let success = try DuckIntentSuccess.bundled()
+        let climb = try XCTUnwrap(success["climb"])
+        XCTAssertEqual(climb.achieves, 0,
+                       "the measured 10 mm ceiling means it does not get up a flight")
+        XCTAssertGreaterThan(climb.repeats, climb.rollouts / 2,
+                             "it reliably ends where the recording ended, which is on the floor")
+        XCTAssertTrue(climb.criterion.contains("on the flight"))
+    }
+}
