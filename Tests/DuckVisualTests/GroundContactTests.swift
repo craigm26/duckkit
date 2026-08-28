@@ -125,13 +125,17 @@ final class GroundContactTests: XCTestCase {
     /// Across the whole corpus, no drawn frame sinks further under the floor
     /// than the visual meshes already explain.
     ///
-    /// WHY THIS IS NOT ZERO. MuJoCo makes contact against COLLISION geoms, and
-    /// the model's are simplified primitives that sit inside the printed
-    /// shells this draws. So a duck lying on its side rests its collision box
-    /// on the floor while the visual shell around it dips below — and the worst
-    /// case in the corpus is `step_up`, at 25 mm, which is a clip that ends
-    /// fallen after failing to climb. That is a rendering fact about the
-    /// meshes, not a placement error: the placement is proved exact by
+    /// WHY THIS IS NOT ZERO, stated correctly at the second attempt. It is not
+    /// that MuJoCo contacts simplified primitives inside these shells — all
+    /// eleven of the model's collision geoms are meshes, sitting on their
+    /// visual counterparts to within half a millimetre. It is that SEVEN OF THE
+    /// FIFTEEN DRAWN BODIES HAVE NO COLLISION GEOMETRY: `yaw2roll`, both upper
+    /// legs, `neck`, `neck_pitch`, `yaw_roll_motion`, `bearing_roll`. Those
+    /// parts are drawn and cannot touch anything, so a duck on its side rests
+    /// on the shells that do collide while a thigh passes through the floor.
+    /// The worst case in the corpus is `step_up`, a clip that ends fallen after
+    /// failing to climb. That is a rendering fact about which bodies collide,
+    /// not a placement error: the placement is proved exact by
     /// `testTheTrunkLandsOnTheRootEvenWhenTheRobotIsInverted`, which puts the
     /// trunk on the recorded root to nine decimal places.
     ///

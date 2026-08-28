@@ -28,9 +28,6 @@ public final class DuckGhostEntity: Entity {
     /// there is no reason two screens should each pay for it.
     private static var cached: [DuckMesh.Body]?
 
-    /// How far the lowest point of the robot sits below the trunk origin in the
-    /// home pose, so the feet can be put on the floor rather than the trunk.
-    public private(set) var floorDrop: Float = 0
 
     public required init() {
         super.init()
@@ -53,10 +50,15 @@ public final class DuckGhostEntity: Entity {
             parts[body.name] = entity
         }
 
-        // Measure the stance once, in the home pose, so the anchor can be the
-        // floor. Doing it from the geometry rather than hardcoding 0.12 means
-        // it stays right if the model is ever re-exported.
-        floorDrop = Self.lowestPoint(bodies: bodies, jointAngles: DuckModel.homePose)
+        // NO FLOOR MEASUREMENT HERE ANY MORE. This used to compute a
+        // `floorDrop` "so the anchor can be the floor", and the frame it
+        // measured in was already the floor: `bodyPoses` puts `trunk_base` at
+        // 0.12 m in the MODEL's world, so the entity origin IS ground level and
+        // the home pose's lowest vertex is +2.3 mm. The function also seeded
+        // its minimum at zero and only ever took `min`, so it returned −0.0 for
+        // every input, and nothing read it. Feeding a repaired version back
+        // into placement would have re-floated the robot by 117.7 mm.
+        // `DuckVisual.DuckGroundClearance` is the honest per-frame answer.
         apply(jointAngles: DuckModel.homePose)
     }
 
@@ -132,26 +134,6 @@ public final class DuckGhostEntity: Entity {
         descriptor.normals = MeshBuffer(normals)
         descriptor.primitives = .triangles(body.indices)
         return try? MeshResource.generate(from: [descriptor])
-    }
-
-    /// The lowest vertex of the whole robot in a given pose, in ARKit's frame.
-    private static func lowestPoint(bodies: [DuckMesh.Body], jointAngles: [Double]) -> Float {
-        let poses = DuckKinematics.bodyPoses(jointAngles: jointAngles)
-        var lowest: Float = 0
-        for body in bodies {
-            guard let pose = poses[body.name] else { continue }
-            let origin = rk(pose.position)
-            let rotation = rk(pose.orientation)
-            // Sampling rather than every vertex: the answer only needs to be
-            // right to a millimetre and a foot has thousands of them.
-            for i in stride(from: 0, to: body.positions.count, by: 3 * 11) {
-                let local = SIMD3<Float>(body.positions[i],
-                                         body.positions[i + 2],
-                                         -body.positions[i + 1])
-                lowest = min(lowest, (origin + rotation.act(local)).y)
-            }
-        }
-        return -lowest
     }
 
     // MARK: - coordinates

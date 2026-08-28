@@ -117,10 +117,25 @@ public struct DuckGroundClearance: Sendable {
     /// The height of the robot's lowest drawn point above z = 0, in metres,
     /// with the trunk placed on `root`.
     ///
-    /// Positive means floating. Slightly negative is normal: MuJoCo makes
-    /// contact against simplified collision primitives that sit inside these
-    /// printed shells, so a duck lying on its side rests its collision box on
-    /// the floor while the visual shell around it dips below.
+    /// Positive means floating. Negative is normal and can be tens of
+    /// millimetres, for a reason worth stating exactly because a first draft of
+    /// this comment got it wrong twice.
+    ///
+    /// It is NOT that MuJoCo contacts simplified primitives inside these
+    /// shells. Every one of the model's eleven collision geoms is a MESH, at
+    /// the same pose as the visual sole it shadows — the footpads differ by
+    /// about half a millimetre, inside the mesh exporter's own clustering. The
+    /// real cause is that SEVEN OF THE FIFTEEN DRAWN BODIES CARRY NO COLLISION
+    /// GEOMETRY AT ALL: `yaw2roll`, both upper legs, `neck`, `neck_pitch`,
+    /// `yaw_roll_motion` and `bearing_roll`. Those parts are drawn and cannot
+    /// touch anything, so a duck on its side rests on the shells that do
+    /// collide while a thigh or the neck passes straight through the floor.
+    /// Measured: the drawn shell reaches −33.5 mm on `step_up` where MuJoCo's
+    /// own contact is at −2.7 mm.
+    ///
+    /// So this reports WHERE THE DRAWN DUCK IS, which is the question a
+    /// renderer has to answer, and it is not a contact depth. Anything driven
+    /// off it — a shadow, say — should clamp at zero and expect a 30 mm swing.
     public func clearance(jointAngles: [Double], root: DuckIntentClip.Root) -> Double {
         let quaternion = DuckQuaternion(w: root.quaternion.0, x: root.quaternion.1,
                                         y: root.quaternion.2, z: root.quaternion.3)
