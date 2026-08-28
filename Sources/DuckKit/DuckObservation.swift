@@ -41,6 +41,32 @@ public struct DuckObservation: Equatable, Sendable {
     /// hot path.
     public static let zeroed = DuckObservation(values: [Float](repeating: 0, count: length))
 
+    /// An observation from 61 floats you already have.
+    ///
+    /// PUBLIC BECAUSE AN EDITOR NEEDS IT, and nil rather than a crash because
+    /// the caller is often holding bytes from somewhere else — a recorded
+    /// trace, a file, a slider the user dragged. `build` remains the way to
+    /// ASSEMBLE one from robot state, and stays the only place that knows the
+    /// layout; this is for handing back 61 numbers that already are one.
+    public init?(exactly values: [Float]) {
+        guard values.count == Self.length else { return nil }
+        self.init(values: values)
+    }
+
+    /// The same observation with one slot changed.
+    ///
+    /// The single operation an observation editor is made of: move one input,
+    /// leave the other sixty alone, and see what the network does differently.
+    /// Out-of-range indices return the observation unchanged rather than
+    /// trapping — a slider bound to a stale slot count should not take the app
+    /// down.
+    public func replacing(slot: Int, with value: Float) -> DuckObservation {
+        guard slot >= 0, slot < Self.length else { return self }
+        var copy = values
+        copy[slot] = value
+        return DuckObservation(values: copy)
+    }
+
     private init(values: [Float]) {
         self.values = values
     }

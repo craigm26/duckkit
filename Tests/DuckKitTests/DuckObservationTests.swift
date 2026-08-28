@@ -98,3 +98,29 @@ final class DuckObservationTests: XCTestCase {
         XCTAssertEqual(c.twistMagnitude, 5, accuracy: 1e-12)
     }
 }
+
+/// The two things an editor needs from an observation.
+final class DuckObservationEditingTests: XCTestCase {
+
+    func testOneSlotChangesAndTheRestDoNot() {
+        let base = DuckObservation.zeroed
+        let edited = base.replacing(slot: 5, with: -1)
+        XCTAssertEqual(edited.values[5], -1)
+        for index in 0..<DuckObservation.length where index != 5 {
+            XCTAssertEqual(edited.values[index], base.values[index], "slot \(index) moved")
+        }
+    }
+
+    /// A slider bound to a stale slot count must not take the app down.
+    func testAnOutOfRangeSlotIsANoOp() {
+        let base = DuckObservation.zeroed
+        XCTAssertEqual(base.replacing(slot: 61, with: 9).values, base.values)
+        XCTAssertEqual(base.replacing(slot: -1, with: 9).values, base.values)
+    }
+
+    func testExactlyRefusesTheWrongWidth() {
+        XCTAssertNotNil(DuckObservation(exactly: [Float](repeating: 0, count: 61)))
+        XCTAssertNil(DuckObservation(exactly: [Float](repeating: 0, count: 60)))
+        XCTAssertNil(DuckObservation(exactly: []))
+    }
+}
