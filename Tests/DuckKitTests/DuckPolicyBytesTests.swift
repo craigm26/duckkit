@@ -75,3 +75,57 @@ final class DuckPolicyBytesTests: XCTestCase {
         XCTAssertEqual(bytes[bytes.startIndex + 3], UInt8((word >> 24) & 0xff))
     }
 }
+
+/// The forgery this reader used to accept.
+///
+/// An attribute whose value nothing read was an attribute anyone could set. A
+/// 42-byte edit turning `Elu alpha=1` into `alpha=100` changes what every
+/// negative activation computes, and it used to load AND fingerprint
+/// identically to the genuine file — so a network with a different activation
+/// function would have been reported as one of Pollen's releases.
+final class DuckPolicyAttributeTests: XCTestCase {
+
+    private func node(op: String, attributes: [DuckPolicy.Attribute]) -> String? {
+        DuckPolicy.attributeProblem(op: op, attributes: attributes)
+    }
+
+    func testTheDefaultsTheRealPoliciesCarryAreAccepted() {
+        XCTAssertNil(node(op: "Gemm", attributes: [
+            .init(name: "alpha", float: 1.0, int: nil),
+            .init(name: "beta", float: 1.0, int: nil),
+            .init(name: "transB", float: nil, int: 1),
+        ]), "every shipped policy carries exactly these")
+        XCTAssertNil(node(op: "Elu", attributes: [.init(name: "alpha", float: 1.0, int: nil)]))
+        XCTAssertNil(node(op: "Sub", attributes: []), "and some ops carry none at all")
+    }
+
+    /// The measured forgery.
+    func testAnEluAlphaThatIsNotOneIsRefused() {
+        let problem = node(op: "Elu", attributes: [.init(name: "alpha", float: 100, int: nil)])
+        let text = try? XCTUnwrap(problem)
+        XCTAssertNotNil(problem, "alpha=100 is a different activation function")
+        XCTAssertTrue((text ?? "").contains("100"), "say what was found: \(problem ?? "nil")")
+        XCTAssertTrue((text ?? "").contains("expected 1.0"), "and what was wanted")
+    }
+
+    func testAGemmScaleThatIsNotOneIsRefused() {
+        XCTAssertNotNil(node(op: "Gemm", attributes: [.init(name: "alpha", float: 2, int: nil)]),
+                        "alpha scales the product — 2 doubles every layer's output")
+        XCTAssertNotNil(node(op: "Gemm", attributes: [.init(name: "beta", float: 0, int: nil)]),
+                        "beta=0 drops the bias entirely")
+    }
+
+    /// An attribute nobody anticipated must be refused rather than ignored,
+    /// because ignoring it is exactly how the alpha hole worked.
+    func testAnUnrecognisedAttributeIsRefusedNotIgnored() {
+        let problem = node(op: "Gemm", attributes: [.init(name: "transA", float: nil, int: 1)])
+        XCTAssertNotNil(problem)
+        XCTAssertTrue((problem ?? "").contains("transA"), problem ?? "nil")
+    }
+
+    func testTransBIsOnlyMeaningfulOnGemm() {
+        XCTAssertNotNil(node(op: "Elu", attributes: [.init(name: "transB", float: nil, int: 1)]))
+        XCTAssertNotNil(node(op: "Gemm", attributes: [.init(name: "transB", float: nil, int: 0)]),
+                        "transB=0 means the weights are stored the other way round")
+    }
+}

@@ -261,14 +261,20 @@ public struct DuckPolicy: Sendable {
         guard structure.ops == expected else {
             throw LoadError.unsupportedArchitecture("op sequence \(structure.ops)")
         }
-        for node in file.nodes where node.op == "Gemm" && !node.transB {
+        for node in file.nodes {
+            if let problem = attributeProblem(op: node.op, attributes: node.attributes) {
+                throw LoadError.unsupportedArchitecture(problem)
+            }
+        }
+        for node in file.nodes where node.op == "Gemm"
+            && !node.attributes.contains(where: { $0.name == "transB" && $0.int == 1 }) {
             throw LoadError.unsupportedArchitecture("Gemm without transB=1")
         }
 
         // The n-th input of a node the op sequence says must have one. A
         // hand-edited file can name the right ops and still hand a Sub a
         // single operand; that is a refusal, not a crash.
-        func operand(_ node: (op: String, inputs: [String], transB: Bool), _ index: Int, _ what: String) throws -> String {
+        func operand(_ node: (op: String, inputs: [String], attributes: [Attribute]), _ index: Int, _ what: String) throws -> String {
             guard index < node.inputs.count else {
                 throw LoadError.unsupportedArchitecture("\(node.op) node has \(node.inputs.count) inputs, no \(what)")
             }
@@ -521,7 +527,7 @@ public struct DuckPolicy: Sendable {
             let dataType: UInt64
             let floats: [Float]
         }
-        var nodes: [(op: String, inputs: [String], transB: Bool)] = []
+        var nodes: [(op: String, inputs: [String], attributes: [Attribute])] = []
         var tensors: [Tensor] = []
         var byName: [String: Tensor] = [:]
         var inputs: [String] = []
@@ -652,26 +658,87 @@ public struct DuckPolicy: Sendable {
         return found
     }
 
-    private static func parseNode(_ bytes: ArraySlice<UInt8>) throws -> (op: String, inputs: [String], transB: Bool) {
+    /// One attribute, with both the shapes this format's operators use.
+    ///
+    /// THE FLOAT USED TO BE THROWN AWAY, AND THAT WAS A FORGERY HOLE. This
+    /// parser read an attribute's name and its INT and ignored its FLOAT
+    /// entirely, so `Elu` carried an `alpha` nothing here ever looked at. Two
+    /// files differing only in that value — a 42-byte edit turning `alpha=1`
+    /// into `alpha=100`, which changes what every negative activation computes
+    /// — loaded identically AND fingerprinted identically, because the
+    /// fingerprint covers the weights and the weights had not moved. A file
+    /// with a different activation function would have been reported as one of
+    /// Pollen's releases. Measured, not theorised.
+    struct Attribute {
+        let name: String
+        let float: Float?
+        let int: UInt64?
+    }
+
+    private static func parseNode(
+        _ bytes: ArraySlice<UInt8>
+    ) throws -> (op: String, inputs: [String], attributes: [Attribute]) {
         var op = ""
         var inputs: [String] = []
-        var transB = false
+        var attributes: [Attribute] = []
         try scan(bytes) { field, wire, payload in
             switch (field, wire) {
             case (1, 2): inputs.append(String(decoding: payload, as: UTF8.self))
             case (4, 2): op = String(decoding: payload, as: UTF8.self)
             case (5, 2): // AttributeProto
                 var name = ""
-                var intValue: UInt64 = 0
+                var floatValue: Float?
+                var intValue: UInt64?
                 try scan(payload) { af, aw, ap in
                     if af == 1, aw == 2 { name = String(decoding: ap, as: UTF8.self) }
+                    // Field 2 is `f`, a 32-bit float. Reading it is the fix.
+                    if af == 2, aw == 5, ap.count == 4 {
+                        var word: UInt32 = 0
+                        for (offset, byte) in ap.enumerated() { word |= UInt32(byte) << (8 * offset) }
+                        floatValue = Float(bitPattern: word)
+                    }
                     if af == 3, aw == 0 { intValue = try varintValue(of: ap) }
                 }
-                if name == "transB", intValue != 0 { transB = true }
+                attributes.append(Attribute(name: name, float: floatValue, int: intValue))
             default: break
             }
         }
-        return (op, inputs, transB)
+        return (op, inputs, attributes)
+    }
+
+    /// Every attribute this reader understands, and the only value it accepts.
+    ///
+    /// An attribute that is always its default carries no information, which is
+    /// what lets the parameter fingerprint stay a COMPLETE description of what
+    /// the network computes. The moment one is allowed to vary, the digest stops
+    /// covering the behaviour — so the rule is not "ignore what we do not use",
+    /// it is "refuse anything that is not the default". That is the same
+    /// validate-at-load-never-at-inference rule this file already follows for
+    /// shapes and operators.
+    static let allowedAttributes: [String: (op: String, value: Double)] = [
+        "alpha": (op: "", value: 1.0),   // Gemm and Elu both default to 1
+        "beta":  (op: "Gemm", value: 1.0),
+    ]
+
+    /// Check one node's attributes, or say what is wrong with them.
+    static func attributeProblem(op: String, attributes: [Attribute]) -> String? {
+        for attribute in attributes {
+            switch attribute.name {
+            case "transB":
+                guard op == "Gemm" else { return "transB on \(op)" }
+                guard attribute.int == 1 else { return "Gemm with transB=\(attribute.int ?? 0)" }
+            case "alpha", "beta":
+                if attribute.name == "beta" && op != "Gemm" { return "beta on \(op)" }
+                // Absent is fine — ONNX's own default is 1. Present and not 1
+                // is a different function wearing the same op name.
+                if let value = attribute.float, value != 1.0 {
+                    return "\(op) with \(attribute.name)=\(value), expected 1.0"
+                }
+            default:
+                return "unrecognised attribute \"\(attribute.name)\" on \(op)"
+            }
+        }
+        return nil
     }
 
     /// ValueInfoProto, of which only field 1 — the name — matters here.
