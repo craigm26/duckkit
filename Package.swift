@@ -48,7 +48,8 @@ let package = Package(
             name: "DuckKit",
             // Recorded walking, so a ghost duck has real motion to draw. Not a
             // dependency — a resource; DuckKit still links nothing.
-            resources: [.copy("Resources/duck-trajectories.json")]
+            resources: [.copy("Resources/duck-trajectories.json"),
+                        .copy("Resources/duck-intent-clips.json")]
         ),
         .target(
             name: "DuckVisual",
