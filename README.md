@@ -100,6 +100,7 @@ types that already exist, rather than a fourth that wraps them.
 | `SigningKeyStore` | Keychain on device, in-memory on Linux, with the device-local invariant assertable under `swift test` |
 | `DuckSoccerMatch` | A match as an append-only, hash-chained, signed record — a league table nobody can quietly edit |
 | `DuckPolicy.fingerprint` | Which policy actually ran: SHA-256 over the parameters, not the file |
+| `DuckOfficialPolicies` | Which nine policies Pollen actually released, by fingerprint — so "official" is checkable offline instead of asserted |
 
 ## Every duck sounds like itself
 
@@ -196,7 +197,7 @@ weights, same bytes in, same floats out to 1e-4.
 swift test
 ```
 
-Runs on Linux aarch64 (a Pi 5) and on macOS. 274 tests, no hardware, no network,
+Runs on Linux aarch64 (a Pi 5) and on macOS. 280 tests, no hardware, no network,
 no device — including the real trained policy, the synthesized voice, and the
 signing.
 
