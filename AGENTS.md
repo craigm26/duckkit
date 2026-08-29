@@ -95,10 +95,12 @@ swift build
 SWIFT_BACKTRACE=enable=no swift test
 ```
 
-343 tests as of this writing, on Linux aarch64 and macOS, with no hardware, no
-network and no device. Report the real count. If a change segfaults after you
-touched a stored property, that is a stale incremental build — clean and rebuild
-before believing it. See `skills/testing-on-linux.md`.
+343 tests, 0 failures, measured on Linux aarch64 at the time of writing; the
+package supports macOS too, and neither run needs hardware, a network or a
+device. Report the count you actually saw, on the platform you actually ran. If
+a change segfaults after you touched a stored property, that is a stale
+incremental build — clean and rebuild before believing it. See
+`skills/testing-on-linux.md`.
 
 ---
 

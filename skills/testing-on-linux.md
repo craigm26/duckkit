@@ -13,8 +13,9 @@
 SWIFT_BACKTRACE=enable=no swift test
 ```
 
-343 tests across 40 classes, no hardware, no network, no device. Gate on the
-**exit code**, not on the last `Executed …` line you happened to see.
+343 tests across 40 classes on Linux aarch64, no hardware, no network, no
+device. Gate on the **exit code**, not on the last `Executed …` line you
+happened to see.
 
 ---
 
