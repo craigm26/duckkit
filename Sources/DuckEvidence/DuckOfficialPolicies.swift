@@ -31,8 +31,11 @@ public enum DuckOfficialPolicies {
 
     /// One policy Pollen have released.
     public struct Release: Equatable, Sendable {
-        /// The filename upstream ships it under. A hint for display, never an
-        /// identity — the fingerprint is the identity.
+        /// The name THIS PROJECT vendors the policy under — four of the nine
+        /// differ from upstream's shipping names (`BEST_alpha_stand.onnx` here
+        /// is `alpha_stand.onnx` in `pollen-robotics/microduck`, and exists
+        /// under this name in neither Pollen repo). A hint for display, never
+        /// an identity — the fingerprint is the identity.
         public let filename: String
         /// SHA-256 over `DuckPolicy.canonicalParameterBytes`, lowercase hex.
         public let fingerprint: String
@@ -111,7 +114,10 @@ public enum DuckOfficialPolicies {
     public static func summary(for standing: Standing) -> String {
         switch standing {
         case .released(let release):
-            return "Released by Pollen Robotics as \(release.filename). \(release.purpose)"
+            // "carried here as": the name is ours, the weights are theirs, and
+            // saying "released as BEST_alpha_stand.onnx" claimed a filename
+            // Pollen never used.
+            return "Released by Pollen Robotics — carried here as \(release.filename). \(release.purpose)"
         case .unrecognised:
             return "Not one of the nine policies Pollen have released. That may mean it was "
                  + "trained by someone else, or that it is newer than this app knows about — "

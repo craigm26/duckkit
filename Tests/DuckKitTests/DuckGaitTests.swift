@@ -28,8 +28,9 @@ final class DuckGaitTests: XCTestCase {
         XCTAssertFalse(frame.limitedBy.contains("mouth"))
     }
 
-    /// α·new + (1−α)·previous, with the trained-in α per joint group.
-    func testTheLowpassUsesTheTrainedCoefficients() {
+    /// α·new + (1−α)·previous, with robotd's α per joint group. (Renamed from
+    /// "trained coefficients": the filter is the hardware's, not training's.)
+    func testTheLowpassUsesRobotdsCoefficients() {
         let zero = [Float](repeating: 0, count: 14)
         let first = DuckGait.frame(action: zero, previousTargets: nil)
         var previous = first.targets

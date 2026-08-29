@@ -106,12 +106,17 @@ final class DuckTrajectoryTests: XCTestCase {
         XCTAssertEqual(ten / one, 10, accuracy: 0.5, "ten loops should cover ten times the ground")
     }
 
-    /// The recorded walk curves, and a caller placing a ghost needs to know it
-    /// will come round rather than head for the horizon.
-    func testTheRecordedWalkCurves() throws {
+    /// The recorded walk runs STRAIGHT — to within about a tenth of a radian
+    /// over a loop. The previous generation of clips veered a full radian per
+    /// loop (an artefact of the hand-tuned plant they were recorded on), and
+    /// this test's ancestor pinned that veer with the message "if this walk
+    /// has become straight, the clips were re-recorded — say so in the docs".
+    /// It has, they were, and the docs say so.
+    func testTheRecordedWalkRunsStraight() throws {
         let t = try DuckTrajectory.bundled(.walk)
-        XCTAssertGreaterThan(abs(t.deltaYaw), 0.5,
-                             "if this walk has become straight, the clips were re-recorded — say so in the docs")
+        XCTAssertLessThan(abs(t.deltaYaw), 0.3,
+                          "a straight command should record a straight walk on the canon plant")
+        XCTAssertGreaterThan(t.deltaX, 0.5, "and it should actually go somewhere")
     }
 
     /// Standing still stays still.

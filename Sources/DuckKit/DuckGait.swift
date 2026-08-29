@@ -5,14 +5,19 @@
 /// ghost's joints move through the *same* arithmetic as the real duck's:
 ///
 ///     targets ← homePose + actionScale × scatter(action)
-///     targets ← first-order low-pass (head α=0.5, legs α=0.7 — trained-in)
+///     targets ← first-order low-pass (head α=0.5, legs α=0.7 — robotd's)
 ///     targets ← held inside each joint's travel, and the holds *named*
 ///
-/// The low-pass coefficients are not a smoothing preference: the policies
-/// were trained against them, and running without them is a different robot.
-/// The filter starts from the first frame's own targets rather than dragging
-/// up from zero — the upstream comment says "the filter starts from reality",
-/// and so does this one.
+/// The low-pass is robotd's HARDWARE behaviour, not a training constant — an
+/// earlier version of this comment repeated robotd's own claim that the
+/// policies "were trained against" the filter, and the training code
+/// contradicts it: mjlab's action term is raw × scale + offset with no filter
+/// anywhere (see `DuckModel.headLowpass` for the full account — training
+/// models actuator lag through its motor model instead). This pipeline
+/// emulates the ROBOT, so it applies what the robot applies. The filter
+/// starts from the first frame's own targets rather than dragging up from
+/// zero — the upstream comment says "the filter starts from reality", and so
+/// does this one.
 ///
 /// Travel limiting mirrors robotd, which clamps to actuator range and reports
 /// the binding limit in `robot.state.limited_by` — the caller gets the same
@@ -71,9 +76,9 @@ public enum DuckGait {
     ///
     /// This is a parameter for one reason: so a caller can sweep α without a
     /// second copy of the filter living somewhere else in the codebase. It is
-    /// not a tuning surface. `.trained` (head 0.5, legs 0.7) is the only
+    /// not a tuning surface. `.robotd` (head 0.5, legs 0.7) is the only
     /// setting that describes the shipped robot, because the alpha policies
-    /// were trained with that filter inside the loop; any other value is a
+    /// value the real runtime ships; any other value is a
     /// different plant than the one the network learned to drive, so a ghost
     /// rendered with it is no longer showing what the duck will do, and a
     /// robot driven with it is a sim-to-real gap nobody measured. α = 1 is
@@ -91,8 +96,13 @@ public enum DuckGait {
             self.legs = legs
         }
 
-        /// What every shipped alpha policy was trained against.
-        public static let trained = Alphas(head: DuckModel.headLowpass, legs: DuckModel.legsLowpass)
+        /// robotd's own defaults — what the physical robot actually applies.
+        public static let robotd = Alphas(head: DuckModel.headLowpass, legs: DuckModel.legsLowpass)
+
+        /// The old name for `robotd`, kept so nothing breaks; the claim it
+        /// encoded ("what the policies were trained against") was false.
+        @available(*, deprecated, renamed: "robotd")
+        public static let trained = robotd
     }
 
     /// Run the tick and keep every intermediate result.
@@ -108,13 +118,13 @@ public enum DuckGait {
     ///     filter, exactly as the runtime carries it.
     ///   - alphas: low-pass coefficients. Leaving this alone is what matches
     ///     the robot; passing anything else departs from what the policy was
-    ///     trained against, deliberately.
+    ///     the hardware applies, deliberately.
     public static func stages(
         action: [Float],
         previousTargets: [Double]?,
         kind: DuckPolicyKind = .walk,
         mouth: Double = 0,
-        alphas: Alphas = .trained
+        alphas: Alphas = .robotd
     ) -> Stages {
         precondition(action.count == DuckModel.policyJointCount, "action is the 14-wide policy output")
         if let previousTargets {
@@ -160,7 +170,7 @@ public enum DuckGait {
         previousTargets: [Double]?,
         kind: DuckPolicyKind = .walk,
         mouth: Double = 0,
-        alphas: Alphas = .trained
+        alphas: Alphas = .robotd
     ) -> Frame {
         let result = stages(
             action: action, previousTargets: previousTargets, kind: kind,

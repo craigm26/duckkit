@@ -14,22 +14,30 @@ import Foundation
 /// simply was not computed on the phone — the same bargain every game engine
 /// makes with motion capture, except the actor was a neural network.
 ///
-/// HOW THE CLIPS WERE MADE, so you can judge them. MuJoCo steps the robot's own
-/// MJCF (Apache-2.0, real measured masses and inertia tensors) at 0.005 s;
-/// `alpha_walking.onnx` runs every fourth step, which is the robot's 50 Hz. The
-/// observation, action scaling and low-pass are this package's, the ones the
-/// golden tests check against onnxruntime. The recorder lives in the
-/// `duck-sounds` repo under `sim/`.
+/// HOW THE CLIPS WERE MADE, so you can judge them. MuJoCo steps POLLEN'S OWN
+/// robot model — `robot_allcollisions.xml`, vendored byte-identical, full
+/// collision geometry and their measured servo class — with training's solver,
+/// floor friction and torque ceiling applied on top, at 0.005 s;
+/// `alpha_walking.onnx` runs every fourth step, which is the robot's 50 Hz,
+/// through the TRAINING control path: target = home + action at scale 1.0,
+/// no filter, exactly what mjlab drove during training. The recorder is
+/// `sim/record.mjs` in the `duck-sounds` repo.
 ///
-/// WHAT IS NOT THE ROBOT'S. Pollen's published model has no collision shapes
-/// and no motors, so the floor, the soles and the servo gains were ours to
-/// choose. That choice decides exactly how this duck moves: it walks and never
-/// falls, but it covers about half the ground you ask for and it drifts. A
-/// stiffness sweep found no setting that both stayed upright and turned
-/// symmetrically — so only the commands that record honestly are here, and
-/// turning right is `turn_left.mirrored()` rather than a clip of something the
-/// policy was not really doing. Re-record when the real collision model and
-/// servo gains are published; nothing else has to change.
+/// AN EARLIER GENERATION OF THESE CLIPS WAS NON-CANON THREE WAYS — a
+/// hand-tuned stiffness-sweep plant (Pollen had not yet published their
+/// collision model), the HARDWARE control path (0.9 scale plus robotd's
+/// low-pass), and commands inside the policy's low-command dead band, where it
+/// marches in place. The old walk also veered a full radian per loop; this one
+/// runs straight to within ~0.1 rad.
+///
+/// WHAT IS HONESTLY LIMITED NOW. The one knowingly simplified part left is
+/// the actuator — a position servo standing in for the friction-and-lag motor
+/// model training used. Under it the policy walks straight with the correct
+/// turn sign but covers less ground than commanded (0.25 m/s commanded
+/// records ~0.11 m/s), and it turns left far more readily than right — so
+/// right-turn is still `turn_left.mirrored()` rather than a clip of something
+/// the policy does badly, keeping both directions exactly as symmetric as the
+/// mirror.
 public struct DuckTrajectory: Equatable, Sendable {
 
     /// The clips that ship with the package.
