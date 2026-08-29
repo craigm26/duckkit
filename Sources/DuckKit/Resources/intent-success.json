@@ -192,10 +192,10 @@
     "headspin": {
       "rollouts": 16,
       "unstable": 0,
-      "achieves": 6,
-      "criterion": "ends toppled, as the recording did — this motion has no stated goal here",
-      "repeats": 6,
-      "recordedEnding": "toppled",
+      "achieves": 8,
+      "criterion": "ends inverted, as the recording did — this motion has no stated goal here",
+      "repeats": 8,
+      "recordedEnding": "inverted",
       "endings": {
         "toppled": 6,
         "inverted": 8,

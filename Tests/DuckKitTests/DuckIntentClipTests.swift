@@ -307,3 +307,42 @@ extension DuckIntentClipTests {
         }
     }
 }
+
+// MARK: - the community headspin holds its headstand
+
+extension DuckIntentSuccessTests {
+
+    /// It was recorded against the WRONG NEUTRAL POSE and labelled from the
+    /// wrong window, and between them the corpus said a working policy failed.
+    /// `headspin.onnx` declares neck_pitch 0.220 and head_pitch 0.680 where
+    /// `homePose` has 0.349 and 0.349, and the harness fed it a joint
+    /// deviation measured from the wrong reference — 7° and 19° out, on the
+    /// head, in a policy whose whole job is balancing on that head.
+    func testTheHeadspinIsRecordedAsHoldingItsInversion() throws {
+        let clip = try XCTUnwrap(try DuckIntentClip.bundled()["headspin"])
+        XCTAssertEqual(clip.endsIn, .inverted,
+                       "it is still up at the end of the clip")
+
+        // Projected gravity's z is +1 when the trunk is upside down.
+        var invertedTicks = 0
+        for root in clip.roots {
+            let (_, x, y, _) = root.quaternion
+            if -(1 - 2 * (x * x + y * y)) > 0.5 { invertedTicks += 1 }
+        }
+        let held = Double(invertedTicks) / clip.hz
+        XCTAssertGreaterThan(held, 3.0, "it holds the headstand for most of the run")
+        XCTAssertGreaterThan(held / clip.duration, 0.85)
+    }
+
+    /// And the rate reflects that rather than the label. It was 6 of 16 against
+    /// "ends toppled" — a criterion derived from the last 0.3 s of a clip that
+    /// spent 82% of itself inverted, so the rollouts that HELD the headstand
+    /// were counted as the failures.
+    func testItsRateIsScoredAgainstBeingInverted() throws {
+        let outcome = try XCTUnwrap(try DuckIntentSuccess.bundled()["headspin"])
+        XCTAssertTrue(outcome.criterion.contains("inverted"), outcome.criterion)
+        XCTAssertGreaterThan(outcome.achieves, 6,
+                             "the old criterion scored the successes as failures")
+        XCTAssertEqual(outcome.recordedEnding, "inverted")
+    }
+}

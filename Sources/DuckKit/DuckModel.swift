@@ -35,6 +35,14 @@ public enum DuckModel {
     /// Joints a policy sees and commands: all but the mouth.
     public static let policyJointCount = 14
 
+    /// THE POSE AN ACTION IS AN OFFSET FROM IS THE POLICY'S, NOT THIS ONE.
+    /// Every `.onnx` states its own in `metadata_props.default_joint_pos`, and
+    /// all ten of Pollen's declare a pose equal to this one — which is why
+    /// treating `homePose` as universal went unnoticed. A community file need
+    /// not: `headspin.onnx` wants neck_pitch 0.220 and head_pitch 0.680 where
+    /// this has 0.349 and 0.349. Anything replaying a policy has to read the
+    /// file's own declaration; this is the robot's rest pose, not a contract.
+    ///
     /// Home pose, radians, in joint order. The trunk sits ~5 mm further
     /// forward than the earlier prototype pose so the centre of mass is over
     /// the ankle axis — `DuckKinematicsTests` proves that claim literally, by
@@ -84,7 +92,13 @@ public enum DuckModel {
     public static let tickHz = 50.0
 
     /// Scales raw policy output before it becomes a joint offset:
-    /// `target = homePose + actionScale × action`.
+    /// `target = defaultPose + actionScale × action`.
+    ///
+    /// TRAINING USED 1.0, AND EVERY POLICY FILE SAYS SO. Each `.onnx` carries
+    /// `action_scale = 1.0` in its metadata, and all six `microduck_rl` env
+    /// configs set the action term's scale to 1.0. 0.9 is this project's own
+    /// de-rating for the physical robot; a replay that wants to reproduce what
+    /// the network actually did must use 1.0, which is what the recorder does.
     public static let actionScale = 0.9
 
     /// The standing policy is trained to be applied whole.
@@ -93,9 +107,20 @@ public enum DuckModel {
     /// Below this twist magnitude the standing policy takes over.
     public static let standingThreshold = 0.05
 
-    /// First-order low-pass coefficients the alpha policies were *trained
-    /// with* — they must match or sim-to-real transfer degrades. Applied as
+    /// First-order low-pass coefficients applied on the way to the servos:
     /// `target = α·new + (1−α)·previous`.
+    ///
+    /// NOT A TRAINING CONSTANT, WHATEVER THIS COMMENT USED TO SAY. It claimed
+    /// these were "the coefficients the alpha policies were *trained with* —
+    /// they must match or sim-to-real transfer degrades", and there is no
+    /// support for that anywhere. Training applies no filter at all: mjlab's
+    /// joint-position action term is `raw × scale + offset` and nothing else,
+    /// its action manager contains no smoothing, and all six of Pollen's
+    /// `microduck_rl` env configs leave it that way.
+    ///
+    /// So this is a HARDWARE choice — smoothing what reaches a real servo —
+    /// and it belongs nowhere near a replay of what the policy did. The
+    /// recorder deliberately does not apply it.
     public static let headLowpass = 0.5
     public static let legsLowpass = 0.7
 
