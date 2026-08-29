@@ -58,7 +58,7 @@ let package = Package(
         .target(
             name: "DuckVisual",
             dependencies: ["DuckKit"],
-            resources: [.copy("Resources/duck-mesh.bin")]
+            resources: [.copy("Resources/duck-mesh.bin"), .copy("Resources/duck-mesh-rollers.bin")]
         ),
         .target(
             name: "DuckRender",

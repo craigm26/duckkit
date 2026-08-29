@@ -51,6 +51,69 @@ CELL = 0.0012
 
 KIT_MJCF = "Tests/DuckKitTests/Fixtures/duck/robot_walk.xml"
 
+# The lower beak: the two parts that swing on the mouth servo. Hinge and
+# orientation are DuckKinematics' `jaw` body, verbatim.
+JAW_MESHES = {"jaw", "jaw_soft"}
+JAW_HINGE = (0.003, 0.040, -0.018)
+JAW_QUAT = (0.7071067811865476, -0.7071067811865476, 0.0, 0.0)
+
+# The rollers overlay: the six bodies that differ, baked in their own frames
+# straight from robot_allcollisions_rollers.xml — the kit's roller table is
+# read from that same file, so no correction is needed.
+ROLLER_BODIES = ["ankle_l_v1", "tire", "tire_2", "ankle_r_v1", "tire_3", "tire_4"]
+
+
+def export_rollers(model_dir: str, out_path: str) -> int:
+    upstream = open(os.path.join(model_dir, "robot_allcollisions_rollers.xml")).read()
+    bodies = parse_bodies(upstream)
+    materials = parse_materials(upstream)
+    mesh_files = parse_mesh_files(upstream)
+    buckets = visual_geoms_by_body(upstream, bodies)
+    entries, positions_blob, normals_blob, index_blob = [], bytearray(), bytearray(), bytearray()
+    for name in ROLLER_BODIES:
+        triangles, colour = [], (0.8, 0.8, 0.8, 1.0)
+        for geom in buckets.get(name, []):
+            filename = mesh_files.get(geom["mesh"])
+            if not filename:
+                continue
+            raw = read_stl(os.path.join(model_dir, "assets", filename))
+            gq, gp = geom["quat"], geom["pos"]
+            for tri in raw:
+                triangles.append(tuple(
+                    (lambda r: (r[0] + gp[0], r[1] + gp[1], r[2] + gp[2]))(q_rotate(gq, v))
+                    for v in tri))
+            if geom["material"] in materials:
+                colour = materials[geom["material"]]
+        if not triangles:
+            print(f"  no visual geometry for {name}")
+            return 1
+        positions, faces = cluster(triangles)
+        normals = normals_for(positions, faces)
+        entries.append({
+            "body": name,
+            "vertexOffset": len(positions_blob) // 12, "vertexCount": len(positions),
+            "indexOffset": len(index_blob) // 4, "indexCount": len(faces) * 3,
+            "rgba": [round(c, 4) for c in colour],
+        })
+        for p in positions:
+            positions_blob += struct.pack("<3f", *p)
+        for n in normals:
+            normals_blob += struct.pack("<3f", *n)
+        for f in faces:
+            index_blob += struct.pack("<3I", *f)
+    header = json.dumps({
+        "format": "duck-mesh-v1",
+        "source": "pollen-robotics/microduck_rl (Apache-2.0), robot_allcollisions_rollers.xml + assets/*.stl",
+        "cell": CELL, "bodies": entries,
+    }, separators=(",", ":")).encode()
+    header += b" " * ((-(len(header) + 8)) % 4)
+    with open(out_path, "wb") as handle:
+        handle.write(b"DKM1"); handle.write(struct.pack("<I", len(header)))
+        handle.write(header); handle.write(positions_blob); handle.write(normals_blob)
+        handle.write(index_blob)
+    print(f"rollers: {len(entries)} bodies, {len(index_blob) // 12} triangles -> {out_path}")
+    return 0
+
 
 # ── quaternions (w, x, y, z) ──────────────────────────────────────────────
 
@@ -265,6 +328,8 @@ def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__.strip().splitlines()[-3])
         return 2
+    if sys.argv[1] == "--rollers":
+        return export_rollers(sys.argv[2], sys.argv[3])
     model_dir, out_path = sys.argv[1], sys.argv[2]
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -287,6 +352,7 @@ def main() -> int:
     index_blob = bytearray()
     total_in = 0
 
+    jaw_triangles = []
     for up, mine in zip(up_bodies, kit_bodies):
         geoms = buckets.get(up["name"], [])
         if not geoms:
@@ -299,6 +365,26 @@ def main() -> int:
         triangles = []
         colour = (0.8, 0.8, 0.8, 1.0)
         for geom in geoms:
+            # THE JAW SPLIT. Upstream fuses the lower beak into the head body
+            # ("a servo without an MJCF joint"); DuckKinematics hinges it on
+            # the mouth servo's horn. So the two beak parts are baked in THAT
+            # frame — head-frame vertex, minus the hinge, un-rotated by the
+            # jaw body's orientation — and emitted as their own body.
+            if up["name"] == "jaw_soft" and geom["mesh"] in JAW_MESHES:
+                filename = mesh_files.get(geom["mesh"])
+                raw = read_stl(os.path.join(model_dir, "assets", filename))
+                total_in += len(raw)
+                gq, gp = geom["quat"], geom["pos"]
+                for tri in raw:
+                    moved = []
+                    for v in tri:
+                        r = q_rotate(gq, v)
+                        r = (r[0] + gp[0], r[1] + gp[1], r[2] + gp[2])
+                        r = q_rotate(delta, r)
+                        r = (r[0] - JAW_HINGE[0], r[1] - JAW_HINGE[1], r[2] - JAW_HINGE[2])
+                        moved.append(q_rotate(q_conj(JAW_QUAT), r))
+                    jaw_triangles.append(tuple(moved))
+                continue
             filename = mesh_files.get(geom["mesh"])
             if not filename:
                 continue
@@ -338,6 +424,24 @@ def main() -> int:
             normals_blob += struct.pack("<3f", *n)
         for f in faces:
             index_blob += struct.pack("<3I", *f)
+
+        if mine["name"] == "bottom_head_shell" and jaw_triangles:
+            positions, faces = cluster(jaw_triangles)
+            normals = normals_for(positions, faces)
+            entries.append({
+                "body": "jaw",
+                "vertexOffset": len(positions_blob) // 12,
+                "vertexCount": len(positions),
+                "indexOffset": len(index_blob) // 4,
+                "indexCount": len(faces) * 3,
+                "rgba": [round(c, 4) for c in materials["jaw_material"]],
+            })
+            for p in positions:
+                positions_blob += struct.pack("<3f", *p)
+            for n in normals:
+                normals_blob += struct.pack("<3f", *n)
+            for f in faces:
+                index_blob += struct.pack("<3I", *f)
 
     header = json.dumps({
         "format": "duck-mesh-v1",

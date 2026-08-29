@@ -11,9 +11,13 @@ final class DuckKinematicsTests: XCTestCase {
             forResource: "duck_chain", withExtension: "json", subdirectory: "Fixtures/duck"))
         let fixture = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
-        XCTAssertEqual(fixture.count, DuckKinematics.bodies.count, "body count")
+        // The jaw is ours, not the vendored model's — see the table's own
+        // comment — so the field-for-field check skips it and it gets tests
+        // of its own below.
+        let vendored = DuckKinematics.bodies.filter { $0.name != "jaw" }
+        XCTAssertEqual(fixture.count, vendored.count, "body count")
 
-        for (expected, body) in zip(fixture, DuckKinematics.bodies) {
+        for (expected, body) in zip(fixture, vendored) {
             XCTAssertEqual(expected["name"] as? String, body.name)
             XCTAssertEqual(expected["parent"] as? String, body.parent, body.name)
             let pos = try XCTUnwrap(expected["pos"] as? [Double])
@@ -31,7 +35,10 @@ final class DuckKinematicsTests: XCTestCase {
                 XCTAssertNil(body.joint, body.name)
             }
             let sites = try XCTUnwrap(expected["sites"] as? [[String: Any]])
-            XCTAssertEqual(sites.map { $0["name"] as? String }, body.sites.map { $0.name }, body.name)
+            // The vendored model pins `mouth_tip` to the fused head; here the
+            // tip rides the jaw, which is the whole point of having one.
+            let expectedSites = sites.compactMap { $0["name"] as? String }.filter { $0 != "mouth_tip" }
+            XCTAssertEqual(expectedSites, body.sites.map { $0.name }, body.name)
         }
     }
 
@@ -82,5 +89,83 @@ final class DuckKinematicsTests: XCTestCase {
         XCTAssertEqual(site.x, x, accuracy: 1e-5, file: file, line: line)
         XCTAssertEqual(site.y, y, accuracy: 1e-5, file: file, line: line)
         XCTAssertEqual(site.z, z, accuracy: 1e-5, file: file, line: line)
+    }
+
+    // MARK: - the jaw
+
+    /// Opening the mouth lowers the beak tip — by the geometry of the hinge,
+    /// about 30 mm at the runtime's fully-open 30° — and moves nothing else.
+    func testOpeningTheMouthLowersTheBeakTipAndNothingElse() {
+        var open = DuckModel.homePose
+        open[DuckModel.mouthIndex] = DuckModel.mouthOpen
+        let shut = DuckKinematics.sitePositions(jointAngles: DuckModel.homePose)
+        let wide = DuckKinematics.sitePositions(jointAngles: open)
+        let drop = shut["mouth_tip"]!.z - wide["mouth_tip"]!.z
+        XCTAssertGreaterThan(drop, 0.025, "the tip must go DOWN when the mouth opens")
+        XCTAssertLessThan(drop, 0.035)
+        XCTAssertEqual(shut["mouth_tip"]!.y, wide["mouth_tip"]!.y, accuracy: 1e-9,
+                       "a lateral hinge keeps the tip on the centreline")
+        for name in ["head_camera", "tof", "left_foot", "right_foot", "imu"] {
+            XCTAssertEqual(shut[name]!.z, wide[name]!.z, accuracy: 1e-12,
+                           "\(name) must not move with the mouth")
+        }
+        let shutBodies = DuckKinematics.bodyPoses(jointAngles: DuckModel.homePose)
+        let wideBodies = DuckKinematics.bodyPoses(jointAngles: open)
+        XCTAssertEqual(shutBodies["bottom_head_shell"], wideBodies["bottom_head_shell"],
+                       "the head shell is the jaw's parent and stays put")
+        XCTAssertNotEqual(shutBodies["jaw"], wideBodies["jaw"])
+    }
+
+    /// The hinge is where the mouth servo's horn is: 40 mm out from the
+    /// head's centreline, level with and just behind the beak root.
+    func testTheJawHingesOnTheMouthServoHorn() throws {
+        let jaw = try XCTUnwrap(DuckKinematics.bodies.first { $0.name == "jaw" })
+        XCTAssertEqual(jaw.parent, "bottom_head_shell")
+        XCTAssertEqual(jaw.joint, "mouth")
+        XCTAssertEqual(jaw.position.y, 0.040, accuracy: 1e-12)
+        let axis = jaw.orientation.rotate(DuckVector(0, 0, 1))
+        XCTAssertEqual(axis.x, 0, accuracy: 1e-9)
+        XCTAssertEqual(axis.y, 1, accuracy: 1e-9, "its hinge is the head's +Y")
+        XCTAssertEqual(axis.z, 0, accuracy: 1e-9)
+    }
+
+    // MARK: - rollers
+
+    /// Rollers swap the two ankle bodies for two blades and four wheels, and
+    /// touch nothing above the ankles.
+    func testRollersSubstituteSixBodiesForTwo() {
+        let legs = DuckKinematics.bodies(for: .legs)
+        let rollers = DuckKinematics.bodies(for: .rollers)
+        XCTAssertEqual(rollers.count, legs.count - 2 + 6)
+        XCTAssertFalse(rollers.contains { $0.name == "ankle_left" })
+        XCTAssertTrue(rollers.contains { $0.name == "ankle_l_v1" && $0.joint == "left_ankle" })
+        XCTAssertEqual(rollers.filter { $0.joint?.hasPrefix("passive_") == true }.count, 4)
+        for body in legs where !["ankle_left", "ankle_right"].contains(body.name) {
+            XCTAssertTrue(rollers.contains { $0.name == body.name && $0.parent == body.parent },
+                          "\(body.name) must be untouched by the swap")
+        }
+        let sites = DuckKinematics.sitePositions(jointAngles: DuckModel.homePose, variant: .rollers)
+        XCTAssertNotNil(sites["left_foot"]); XCTAssertNotNil(sites["right_foot"])
+        XCTAssertEqual(sites["left_foot"]!.y, -sites["right_foot"]!.y, accuracy: 0.002,
+                       "the blades are mirrored about the centreline")
+    }
+
+    /// Every wheel rolls the robot FORWARD for positive spin, whichever way
+    /// its axle points — the right blade is a mirrored part.
+    func testAllFourWheelsRollForwardTogether() {
+        let still = DuckKinematics.bodyPoses(jointAngles: DuckModel.homePose, variant: .rollers)
+        let turned = DuckKinematics.bodyPoses(jointAngles: DuckModel.homePose, variant: .rollers,
+                                              wheelSpin: 0.3)
+        for tire in ["tire", "tire_2", "tire_3", "tire_4"] {
+            let s = still[tire]!.orientation, t = turned[tire]!.orientation
+            let inverse = DuckQuaternion(w: s.w, x: -s.x, y: -s.y, z: -s.z)
+            // The world-frame rotation that took the wheel from still to
+            // turned; its axis must be −Y for forward rolling.
+            let delta = (t * inverse).normalized
+            XCTAssertLessThan(delta.y, 0, "\(tire): spin axis must be −Y for forward rolling")
+            // The axle tilts a little with the home pose's hip roll, so it is
+            // not exactly −Y; it must be overwhelmingly so.
+            XCTAssertGreaterThan(abs(delta.y), 10 * (abs(delta.x) + abs(delta.z)), tire)
+        }
     }
 }

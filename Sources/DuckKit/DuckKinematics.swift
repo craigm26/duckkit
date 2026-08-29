@@ -83,7 +83,29 @@ public enum DuckKinematics {
         Body(name: "bottom_head_shell", parent: "yaw_roll_motion", joint: "head_roll",
              position: DuckVector(-0.0179, 0.0, 0.0145),
              orientation: DuckQuaternion(w: 0.707107, x: -0.0, y: -0.707107, z: 0.0),
-             sites: [Site(name: "head_camera", position: DuckVector(0.01175, 0.0, -0.0735)), Site(name: "mouth_tip", position: DuckVector(-0.00829334, 0.0, -0.0777383)), Site(name: "tof", position: DuckVector(0.0143, 0.0225, -0.0735)), Site(name: "head_imu", position: DuckVector(0.0114823, 0.000202447, -0.05126))]),
+             sites: [Site(name: "head_camera", position: DuckVector(0.01175, 0.0, -0.0735)), Site(name: "tof", position: DuckVector(0.0143, 0.0225, -0.0735)), Site(name: "head_imu", position: DuckVector(0.0114823, 0.000202447, -0.05126))]),
+                // THE JAW — the one body here that Pollen's MJCF does not have.
+        //
+        // The real robot has a fifteenth servo, `mouth`, and a hinged lower
+        // beak; Pollen's simulation plant fuses the beak into the head ("a
+        // servo without an MJCF joint — the jaw is a fixed geom", their own
+        // bake script says), because no policy drives it. So there is no joint
+        // to copy. What there IS is the servo: `robot_allcollisions.xml` places
+        // the mouth's XL330 in the head at (0.003, 0.0255, −0.018) with its
+        // horn pointing along −y, and the same servo mesh sits at every other
+        // joint with its horn exactly 14.5 mm along that axis — which puts the
+        // mouth horn, and therefore the hinge, at (0.003, 0.040, −0.018) in
+        // the head frame with a lateral axis. The `jaw` mesh confirms it: its
+        // rear carries a hub of vertices 3–9 mm from that line and nothing
+        // else. Sense: +angle lowers the beak tip, so the runtime's
+        // −5° closed … +30° open reads as pressed-shut to wide.
+        //
+        // Hinge axis is body-local Z like every other joint; the orientation
+        // is a −90° turn about X so that local Z is the head's +Y.
+        Body(name: "jaw", parent: "bottom_head_shell", joint: "mouth",
+             position: DuckVector(0.003, 0.040, -0.018),
+             orientation: DuckQuaternion(w: 0.7071067811865476, x: -0.7071067811865476, y: 0.0, z: 0.0),
+             sites: [Site(name: "mouth_tip", position: DuckVector(-0.01129334, 0.0597383, -0.040))]),
         Body(name: "bearing_roll", parent: "trunk_base", joint: "right_hip_yaw",
              position: DuckVector(0.006, -0.0175, -0.005),
              orientation: DuckQuaternion(w: 0.0, x: -0.707107, y: -0.707107, z: -0.0),
@@ -141,10 +163,82 @@ public enum DuckKinematics {
         (position - orientation.rotate(trunkOriginInModelFrame), orientation)
     }
 
+    /// Which feet the robot is wearing.
+    ///
+    /// Pollen ship two robot descriptions from the same CAD: the walker, and
+    /// `robot_allcollisions_rollers.xml`, where each ankle body becomes a
+    /// roller blade carrying two passive wheels. Everything above the ankles is
+    /// identical, so the variant is a substitution of six bodies, not a second
+    /// robot.
+    public enum Variant: String, Sendable, CaseIterable {
+        case legs, rollers
+    }
+
+    /// The six bodies that differ on rollers, from
+    /// `robot_allcollisions_rollers.xml` (pollen-robotics/microduck_rl), read
+    /// mechanically like the walker's table. The wheel joints are passive —
+    /// not in the 15-wide pose — and turn with `wheelSpin`.
+    public static let rollerBodies: [Body] = [
+        Body(name: "ankle_l_v1", parent: "leg", joint: "left_ankle",
+             position: DuckVector(0.0, 0.042, -0.026),
+             orientation: DuckQuaternion(w: 0.0, x: 1.0, y: -0.0, z: 0.0),
+             sites: [Site(name: "left_foot", position: DuckVector(-0.0, -0.0475, -0.0147))]),
+        Body(name: "tire", parent: "ankle_l_v1", joint: "passive_LF_wheel",
+             position: DuckVector(-0.0395, -0.0325, -0.0147),
+             orientation: DuckQuaternion(w: 1.0, x: -0.0, y: 0.0, z: -0.0),
+             sites: []),
+        Body(name: "tire_2", parent: "ankle_l_v1", joint: "passive_LR_wheel",
+             position: DuckVector(0.0255, -0.0325, -0.0147),
+             orientation: DuckQuaternion(w: 1.0, x: -0.0, y: 0.0, z: -0.0),
+             sites: []),
+        Body(name: "ankle_r_v1", parent: "leg_2", joint: "right_ankle",
+             position: DuckVector(-0.042, 0.0, -0.026),
+             orientation: DuckQuaternion(w: 0.0, x: -0.707107, y: -0.707107, z: 0.0),
+             sites: [Site(name: "right_foot", position: DuckVector(0.0, -0.0475, -0.0144819))]),
+        Body(name: "tire_3", parent: "ankle_r_v1", joint: "passive_RF_wheel",
+             position: DuckVector(0.0395, -0.0325, -0.0144819),
+             orientation: DuckQuaternion(w: 0.0, x: -0.0, y: 1.0, z: -0.0),
+             sites: []),
+        Body(name: "tire_4", parent: "ankle_r_v1", joint: "passive_RR_wheel",
+             position: DuckVector(-0.0255, -0.0325, -0.0144819),
+             orientation: DuckQuaternion(w: 0.0, x: -0.0, y: 1.0, z: -0.0),
+             sites: []),
+    ]
+
+    /// The body chain for a variant: the walker's table, or that table with
+    /// both ankle bodies swapped for the roller blades and their wheels.
+    public static func bodies(for variant: Variant) -> [Body] {
+        switch variant {
+        case .legs:
+            return bodies
+        case .rollers:
+            let replaced: Set<String> = ["ankle_left", "ankle_right"]
+            return bodies.filter { !replaced.contains($0.name) } + rollerBodies
+        }
+    }
+
+    /// Body names that exist only in one variant — what a renderer must swap.
+    public static func bodyNames(onlyIn variant: Variant) -> Set<String> {
+        variant == .legs ? ["ankle_left", "ankle_right"] : Set(rollerBodies.map(\.name))
+    }
+
     public static func bodyPoses(jointAngles: [Double]) -> [String: Pose] {
+        bodyPoses(jointAngles: jointAngles, variant: .legs, wheelSpin: 0)
+    }
+
+    /// Where every body is, for a variant.
+    ///
+    /// `wheelSpin` is the wheels' rolled angle in radians, positive for
+    /// forward travel: each passive wheel turns about its own axle in the
+    /// sense that rolls the robot forward, whichever way that axle happens to
+    /// point in its parent's frame — the right blade is a mirrored part, so
+    /// its axles point the other way and a naive shared angle would spin one
+    /// side backwards.
+    public static func bodyPoses(jointAngles: [Double], variant: Variant,
+                                 wheelSpin: Double = 0) -> [String: Pose] {
         precondition(jointAngles.count == DuckModel.jointCount, "expected all 15 joints")
         var poses: [String: Pose] = [:]
-        for body in bodies {
+        for body in bodies(for: variant) {
             let parentPose: Pose
             if let parent = body.parent {
                 guard let p = poses[parent] else { continue }
@@ -160,6 +254,13 @@ public enum DuckKinematics {
             }
             if let joint = body.joint, let index = DuckModel.jointIndex(of: joint) {
                 orientation = (orientation * DuckQuaternion(aboutZ: jointAngles[index])).normalized
+            } else if let joint = body.joint, joint.hasPrefix("passive_"), wheelSpin != 0 {
+                // Forward rolling is angular velocity along the world's −Y
+                // (right-hand rule, +X forward, +Z up); an axle whose local Z
+                // points that way takes +spin, one pointing the other way −spin.
+                let axle = orientation.rotate(DuckVector(0, 0, 1))
+                let sense: Double = axle.y < 0 ? 1 : -1
+                orientation = (orientation * DuckQuaternion(aboutZ: wheelSpin * sense)).normalized
             }
             poses[body.name] = Pose(position: position, orientation: orientation)
         }
@@ -169,9 +270,15 @@ public enum DuckKinematics {
     /// World positions of the model's sites — head camera, ToF, IMUs, feet,
     /// mouth tip — for 15 joint angles in standard order.
     public static func sitePositions(jointAngles: [Double]) -> [String: DuckVector] {
-        let poses = bodyPoses(jointAngles: jointAngles)
+        sitePositions(jointAngles: jointAngles, variant: .legs)
+    }
+
+    /// Site positions for a variant — the rollers' foot sites sit lower and
+    /// further back than the walker's, at the blade rather than the sole.
+    public static func sitePositions(jointAngles: [Double], variant: Variant) -> [String: DuckVector] {
+        let poses = bodyPoses(jointAngles: jointAngles, variant: variant)
         var sites: [String: DuckVector] = [:]
-        for body in bodies {
+        for body in bodies(for: variant) {
             guard let pose = poses[body.name] else { continue }
             for site in body.sites {
                 sites[site.name] = pose.position + pose.orientation.rotate(site.position)

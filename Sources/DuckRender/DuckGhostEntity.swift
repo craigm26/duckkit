@@ -24,14 +24,27 @@ import UIKit
 public final class DuckGhostEntity: Entity {
 
     private var parts: [String: ModelEntity] = [:]
-    /// Loaded once per process. Decoding is a few megabytes of triangles and
-    /// there is no reason two screens should each pay for it.
-    private static var cached: [DuckMesh.Body]?
-
+    /// Which feet this ghost wears; fixed at creation, like the robot's.
+    public let variant: DuckKinematics.Variant
+    /// Loaded once per process and variant. Decoding is a few megabytes of
+    /// triangles and there is no reason two screens should each pay for it.
+    private static var cached: [DuckKinematics.Variant: [DuckMesh.Body]] = [:]
 
     public required init() {
+        self.variant = .legs
         super.init()
-        let bodies = Self.geometry()
+        build()
+    }
+
+    /// A ghost on rollers or legs.
+    public init(variant: DuckKinematics.Variant) {
+        self.variant = variant
+        super.init()
+        build()
+    }
+
+    private func build() {
+        let bodies = Self.geometry(variant)
 
         for body in bodies {
             guard let mesh = Self.meshResource(for: body) else { continue }
@@ -96,7 +109,14 @@ public final class DuckGhostEntity: Entity {
     /// bench, which has no root to honour, and the wrong one for a recording —
     /// use `place(root:jointAngles:)` there.
     public func apply(jointAngles: [Double]) {
-        let poses = DuckKinematics.bodyPoses(jointAngles: jointAngles)
+        apply(jointAngles: jointAngles, wheelSpin: 0)
+    }
+
+    /// Pose plus, on rollers, how far the wheels have rolled (radians,
+    /// positive forward). Ignored on legs.
+    public func apply(jointAngles: [Double], wheelSpin: Double) {
+        let poses = DuckKinematics.bodyPoses(jointAngles: jointAngles, variant: variant,
+                                             wheelSpin: wheelSpin)
         for (name, entity) in parts {
             guard let pose = poses[name] else { continue }
             entity.position = Self.rk(pose.position)
@@ -106,10 +126,10 @@ public final class DuckGhostEntity: Entity {
 
     // MARK: - geometry
 
-    private static func geometry() -> [DuckMesh.Body] {
-        if let cached { return cached }
-        let loaded = (try? DuckMesh.bundled()) ?? []
-        cached = loaded
+    private static func geometry(_ variant: DuckKinematics.Variant) -> [DuckMesh.Body] {
+        if let hit = cached[variant] { return hit }
+        let loaded = (try? DuckMesh.bundled(variant: variant)) ?? []
+        cached[variant] = loaded
         return loaded
     }
 

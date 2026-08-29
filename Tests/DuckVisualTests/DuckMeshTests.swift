@@ -113,4 +113,46 @@ final class DuckMeshTests: XCTestCase {
         XCTAssertThrowsError(try DuckMesh.decode(Data("not a mesh at all".utf8)))
         XCTAssertThrowsError(try DuckMesh.decode(Data()))
     }
+
+    /// On rollers the ankle meshes are gone and the six roller bodies are
+    /// there, every one with a name the kinematics knows.
+    func testTheRollersVariantSwapsExactlyTheAnkleBodies() throws {
+        let legs = Set(try DuckMesh.bundled(variant: .legs).map(\.name))
+        let rollers = try DuckMesh.bundled(variant: .rollers)
+        let names = Set(rollers.map(\.name))
+        XCTAssertFalse(names.contains("ankle_left")); XCTAssertFalse(names.contains("ankle_right"))
+        for expected in ["ankle_l_v1", "ankle_r_v1", "tire", "tire_2", "tire_3", "tire_4"] {
+            XCTAssertTrue(names.contains(expected), expected)
+        }
+        XCTAssertEqual(names.subtracting(legs).count, 6)
+        let known = Set(DuckKinematics.bodies(for: .rollers).map(\.name))
+        XCTAssertTrue(names.isSubset(of: known), "\(names.subtracting(known))")
+        for body in rollers where body.name.hasPrefix("tire") {
+            XCTAssertGreaterThan(body.triangleCount, 500, "a wheel is round; \(body.name) has \(body.triangleCount)")
+        }
+    }
+
+    /// The jaw is baked in the HINGE frame, not the head's. The hinge sits
+    /// 40 mm off the centreline at the mouth servo, so in its own frame the
+    /// beak spans about −86…+6 mm along the hinge (local Z is the head's +Y)
+    /// and reaches ~60 mm forward (local +Y is the head's −Z). A split that
+    /// forgot to subtract the hinge would put the whole beak 40 mm to one
+    /// side of these bounds.
+    func testTheJawIsBakedAboutItsHinge() throws {
+        let jaw = try XCTUnwrap(try DuckMesh.bundled().first { $0.name == "jaw" })
+        XCTAssertGreaterThan(jaw.triangleCount, 1000)
+        var lo = [Double.infinity, .infinity, .infinity], hi = [-Double.infinity, -.infinity, -.infinity]
+        for i in stride(from: 0, to: jaw.positions.count, by: 3) {
+            for k in 0..<3 {
+                lo[k] = min(lo[k], Double(jaw.positions[i + k]))
+                hi[k] = max(hi[k], Double(jaw.positions[i + k]))
+            }
+        }
+        // Head-frame extents of jaw + jaw_soft, from the upstream STLs:
+        // x −17.4…+12.0, y ±45.7, z −77.7…−9.0 mm; hinge (3, 40, −18);
+        // local = (dx, −dz, dy).
+        XCTAssertEqual(lo[0], -0.0204, accuracy: 0.002); XCTAssertEqual(hi[0], 0.009, accuracy: 0.002)
+        XCTAssertEqual(lo[1], -0.009, accuracy: 0.002);  XCTAssertEqual(hi[1], 0.0597, accuracy: 0.002)
+        XCTAssertEqual(lo[2], -0.0857, accuracy: 0.002); XCTAssertEqual(hi[2], 0.0057, accuracy: 0.002)
+    }
 }

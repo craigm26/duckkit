@@ -66,6 +66,20 @@ public enum DuckMesh {
         return try decode(Data(contentsOf: url))
     }
 
+    /// The robot's shape in a variant: the walker, or the walker with its two
+    /// ankle bodies swapped for Pollen's roller blades and wheels
+    /// (`duck-mesh-rollers.bin`, from `robot_allcollisions_rollers.xml`). The
+    /// body names line up with `DuckKinematics.bodies(for:)`.
+    public static func bundled(variant: DuckKinematics.Variant) throws -> [Body] {
+        let base = try bundled()
+        guard variant == .rollers else { return base }
+        guard let url = Bundle.module.url(forResource: "duck-mesh-rollers", withExtension: "bin") else {
+            throw LoadError.missingResource
+        }
+        let dropped = DuckKinematics.bodyNames(onlyIn: .legs)
+        return base.filter { !dropped.contains($0.name) } + (try decode(Data(contentsOf: url)))
+    }
+
     /// The bodies that have geometry, as a set of names — useful for asserting
     /// against `DuckKinematics.bodies` without decoding megabytes.
     public static func bundledBodyNames() throws -> [String] {
