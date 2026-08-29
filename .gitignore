@@ -5,3 +5,4 @@ DerivedData/
 Package.resolved
 .DS_Store
 tools/__pycache__/
+.claude/
