@@ -1,1 +1,225 @@
-{"format":"duck-intent-success/1","rollouts":16,"seed":"0x2f6e2b1","randomisation":{"source":"pollen-robotics/microduck_rl · microduck_velocity_env_cfg.py","dropHeightMetres":[0.12,0.13],"footFrictionScale":[0.7,1.3],"pushMetresPerSecond":[-0.3,0.3],"pushIntervalSeconds":[3,6],"trunkCentreOfMassMetres":[-0.003,0.003]},"intents":{"hold":{"rollouts":16,"unstable":0,"achieves":16,"criterion":"ends standing, trunk at least 100 mm up","repeats":16,"recordedEnding":"standing","endings":{"standing":16},"medianHeight":0.1163,"worstHeight":0.1161},"kick_left":{"rollouts":16,"unstable":0,"achieves":16,"criterion":"ends standing, trunk at least 100 mm up","repeats":16,"recordedEnding":"standing","endings":{"standing":16},"medianHeight":0.1139,"worstHeight":0.1135},"kick_right":{"rollouts":16,"unstable":0,"achieves":16,"criterion":"ends standing, trunk at least 100 mm up","repeats":16,"recordedEnding":"standing","endings":{"standing":16},"medianHeight":0.1136,"worstHeight":0.1133},"ground_pick":{"rollouts":16,"unstable":0,"achieves":16,"criterion":"ends standing, trunk at least 100 mm up","repeats":16,"recordedEnding":"standing","endings":{"standing":16},"medianHeight":0.1163,"worstHeight":0.1162},"roulade":{"rollouts":16,"unstable":0,"achieves":16,"criterion":"ends standing, trunk at least 100 mm up","repeats":16,"recordedEnding":"standing","endings":{"standing":16},"medianHeight":0.1149,"worstHeight":0.1147},"sit":{"rollouts":16,"unstable":0,"achieves":16,"criterion":"ends seated, trunk between 52 and 100 mm","repeats":16,"recordedEnding":"seated","endings":{"seated":16},"medianHeight":0.0594,"worstHeight":0.0593},"step_up":{"rollouts":16,"unstable":0,"achieves":0,"criterion":"ends standing on the flight, trunk at least 40 mm up","repeats":9,"recordedEnding":"toppled","endings":{"toppled":9,"crouched":2,"standing":4,"inverted":1},"medianHeight":0.0837,"worstHeight":0.0357},"lever_up":{"rollouts":16,"unstable":0,"achieves":0,"criterion":"ends standing on the flight, trunk at least 40 mm up","repeats":14,"recordedEnding":"standing","endings":{"standing":14,"toppled":2},"medianHeight":0.1166,"worstHeight":0.0587},"riser_up":{"rollouts":16,"unstable":0,"achieves":0,"criterion":"ends standing on the flight, trunk at least 40 mm up","repeats":15,"recordedEnding":"standing","endings":{"standing":15,"toppled":1},"medianHeight":0.1164,"worstHeight":0.0961},"climb":{"rollouts":16,"unstable":0,"achieves":0,"criterion":"ends standing on the flight, trunk at least 40 mm up","repeats":14,"recordedEnding":"standing","endings":{"standing":14,"inverted":1,"toppled":1},"medianHeight":0.1164,"worstHeight":0.0484},"back_roll":{"rollouts":16,"unstable":0,"achieves":14,"criterion":"ends standing, trunk at least 100 mm up","repeats":14,"recordedEnding":"standing","endings":{"inverted":1,"standing":14,"toppled":1},"medianHeight":0.1162,"worstHeight":0.0413},"wall_flip":{"rollouts":16,"unstable":0,"achieves":16,"criterion":"ends standing, trunk at least 100 mm up","repeats":16,"recordedEnding":"standing","endings":{"standing":16},"medianHeight":0.1162,"worstHeight":0.1159},"headspin":{"rollouts":16,"unstable":0,"achieves":1,"criterion":"ends inverted, as the recording did — this motion has no stated goal here","repeats":1,"recordedEnding":"inverted","endings":{"toppled":13,"seated":2,"inverted":1},"medianHeight":0.0384,"worstHeight":0.0333},"roller_crouch":{"rollouts":16,"unstable":0,"achieves":16,"criterion":"ends standing, trunk at least 100 mm up","repeats":16,"recordedEnding":"standing","endings":{"standing":16},"medianHeight":0.11,"worstHeight":0.1097}}}
+{
+  "format": "duck-intent-success/1",
+  "rollouts": 16,
+  "seed": "0x2f6e2b1",
+  "randomisation": {
+    "source": "pollen-robotics/microduck_rl · microduck_velocity_env_cfg.py",
+    "dropHeightMetres": [
+      0.12,
+      0.13
+    ],
+    "footFrictionScale": [
+      0.7,
+      1.3
+    ],
+    "pushMetresPerSecond": [
+      -0.3,
+      0.3
+    ],
+    "pushIntervalSeconds": [
+      3,
+      6
+    ],
+    "trunkCentreOfMassMetres": [
+      -0.003,
+      0.003
+    ]
+  },
+  "intents": {
+    "roller_crouch": {
+      "rollouts": 16,
+      "variant": "rollers",
+      "randomised": "drop 0.12–0.13 m, tyre friction ×0.7–1.3, ±0.3 m/s shove every 3–6 s, COM ±3 mm",
+      "unstable": 0,
+      "achieves": 16,
+      "criterion": "ends standing, trunk at least 100 mm up",
+      "repeats": 16,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 16
+      },
+      "medianHeight": 0.11,
+      "worstHeight": 0.1097
+    },
+    "hold": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 16,
+      "criterion": "ends standing, trunk at least 100 mm up",
+      "repeats": 16,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 16
+      },
+      "medianHeight": 0.1163,
+      "worstHeight": 0.1161
+    },
+    "kick_left": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 16,
+      "criterion": "ends standing, trunk at least 100 mm up",
+      "repeats": 16,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 16
+      },
+      "medianHeight": 0.1139,
+      "worstHeight": 0.1135
+    },
+    "kick_right": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 16,
+      "criterion": "ends standing, trunk at least 100 mm up",
+      "repeats": 16,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 16
+      },
+      "medianHeight": 0.1136,
+      "worstHeight": 0.1133
+    },
+    "ground_pick": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 16,
+      "criterion": "ends standing, trunk at least 100 mm up",
+      "repeats": 16,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 16
+      },
+      "medianHeight": 0.1163,
+      "worstHeight": 0.1162
+    },
+    "roulade": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 16,
+      "criterion": "ends standing, trunk at least 100 mm up",
+      "repeats": 16,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 16
+      },
+      "medianHeight": 0.1149,
+      "worstHeight": 0.1147
+    },
+    "sit": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 16,
+      "criterion": "ends seated, trunk between 52 and 100 mm",
+      "repeats": 16,
+      "recordedEnding": "seated",
+      "endings": {
+        "seated": 16
+      },
+      "medianHeight": 0.0594,
+      "worstHeight": 0.0593
+    },
+    "step_up": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 0,
+      "criterion": "ends standing on the flight, trunk at least 40 mm up",
+      "repeats": 9,
+      "recordedEnding": "toppled",
+      "endings": {
+        "toppled": 9,
+        "crouched": 2,
+        "standing": 4,
+        "inverted": 1
+      },
+      "medianHeight": 0.0837,
+      "worstHeight": 0.0357
+    },
+    "lever_up": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 0,
+      "criterion": "ends standing on the flight, trunk at least 40 mm up",
+      "repeats": 14,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 14,
+        "toppled": 2
+      },
+      "medianHeight": 0.1166,
+      "worstHeight": 0.0587
+    },
+    "riser_up": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 0,
+      "criterion": "ends standing on the flight, trunk at least 40 mm up",
+      "repeats": 15,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 15,
+        "toppled": 1
+      },
+      "medianHeight": 0.1164,
+      "worstHeight": 0.0961
+    },
+    "climb": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 0,
+      "criterion": "ends standing on the flight, trunk at least 40 mm up",
+      "repeats": 14,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 14,
+        "inverted": 1,
+        "toppled": 1
+      },
+      "medianHeight": 0.1164,
+      "worstHeight": 0.0484
+    },
+    "back_roll": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 14,
+      "criterion": "ends standing, trunk at least 100 mm up",
+      "repeats": 14,
+      "recordedEnding": "standing",
+      "endings": {
+        "inverted": 1,
+        "standing": 14,
+        "toppled": 1
+      },
+      "medianHeight": 0.1162,
+      "worstHeight": 0.0413
+    },
+    "wall_flip": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 16,
+      "criterion": "ends standing, trunk at least 100 mm up",
+      "repeats": 16,
+      "recordedEnding": "standing",
+      "endings": {
+        "standing": 16
+      },
+      "medianHeight": 0.1162,
+      "worstHeight": 0.1159
+    },
+    "headspin": {
+      "rollouts": 16,
+      "unstable": 0,
+      "achieves": 1,
+      "criterion": "ends inverted, as the recording did — this motion has no stated goal here",
+      "repeats": 1,
+      "recordedEnding": "inverted",
+      "endings": {
+        "toppled": 13,
+        "seated": 2,
+        "inverted": 1
+      },
+      "medianHeight": 0.0384,
+      "worstHeight": 0.0333
+    }
+  }
+}

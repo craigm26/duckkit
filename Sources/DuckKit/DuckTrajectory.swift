@@ -59,9 +59,14 @@ public struct DuckTrajectory: Equatable, Sendable {
         case skate
         case skateFast = "skate_fast"
         case skateBack = "skate_back"
-        /// Recorded with a +0.6 rad/s yaw command; on the older rollers plant
-        /// the policy turned the OTHER way, and the clip's deltaYaw says so.
+        /// Recorded with a +0.6 rad/s yaw command. The policy turns the
+        /// commanded way but SPINS — about 3.3 rad/s on the un-rebuilt rollers
+        /// plant, five times what was asked — and the clip's deltaYaw carries
+        /// that measurement. A renderer should take the swizzle from this clip
+        /// and its heading from whatever drives the robot, not from deltaYaw.
         case skateTurn = "skate_turn"
+        // Note also that `skateStand` is not still: at vx = 0 the roller
+        // policy drifts ~0.09 m/s on this plant, and its deltaX says so.
 
         /// Which feet this clip was recorded on.
         public var variant: DuckKinematics.Variant {

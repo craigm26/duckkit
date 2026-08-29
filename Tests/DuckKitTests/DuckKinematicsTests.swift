@@ -116,9 +116,10 @@ final class DuckKinematicsTests: XCTestCase {
         XCTAssertNotEqual(shutBodies["jaw"], wideBodies["jaw"])
     }
 
-    /// The hinge is where the mouth servo's horn is: 40 mm out from the
-    /// head's centreline, level with and just behind the beak root.
-    func testTheJawHingesOnTheMouthServoHorn() throws {
+    /// The stand-in pivot is where the mouth servo's horn is: 40 mm out from
+    /// the head's centreline, level with and just behind the beak root. (The
+    /// real jaw rides a closed-loop linkage; see the body's comment.)
+    func testTheJawPivotStandsInAtTheMouthServoHorn() throws {
         let jaw = try XCTUnwrap(DuckKinematics.bodies.first { $0.name == "jaw" })
         XCTAssertEqual(jaw.parent, "bottom_head_shell")
         XCTAssertEqual(jaw.joint, "mouth")
@@ -159,12 +160,14 @@ final class DuckKinematicsTests: XCTestCase {
         for tire in ["tire", "tire_2", "tire_3", "tire_4"] {
             let s = still[tire]!.orientation, t = turned[tire]!.orientation
             let inverse = DuckQuaternion(w: s.w, x: -s.x, y: -s.y, z: -s.z)
-            // The world-frame rotation that took the wheel from still to
-            // turned; its axis must be −Y for forward rolling.
+            // THE PHYSICAL CLAIM, not an axis sign: a point fixed on the top
+            // of the rim must move toward +X (forward) for positive spin. The
+            // first version asserted "−Y" and pinned every wheel moonwalking.
+            let topInWheel = inverse.rotate(DuckVector(0, 0, 0.015))
+            let after = t.rotate(topInWheel)
+            XCTAssertGreaterThan(after.x, 0.003, "\(tire): the top of the rim must move forward")
             let delta = (t * inverse).normalized
-            XCTAssertLessThan(delta.y, 0, "\(tire): spin axis must be −Y for forward rolling")
-            // The axle tilts a little with the home pose's hip roll, so it is
-            // not exactly −Y; it must be overwhelmingly so.
+            XCTAssertGreaterThan(delta.y, 0, "\(tire): forward rolling is +Y")
             XCTAssertGreaterThan(abs(delta.y), 10 * (abs(delta.x) + abs(delta.z)), tire)
         }
     }

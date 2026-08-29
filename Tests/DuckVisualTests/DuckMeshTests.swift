@@ -155,4 +155,22 @@ final class DuckMeshTests: XCTestCase {
         XCTAssertEqual(lo[1], -0.009, accuracy: 0.002);  XCTAssertEqual(hi[1], 0.0597, accuracy: 0.002)
         XCTAssertEqual(lo[2], -0.0857, accuracy: 0.002); XCTAssertEqual(hi[2], 0.0057, accuracy: 0.002)
     }
+
+    /// A body wears its biggest VISIBLE part's colour, never a bearing or a
+    /// servo hidden inside it: the head shell is not bearing-blue, and the
+    /// beak is Pollen's yellow.
+    func testBodiesWearTheirShellsColoursNotTheirBearings() throws {
+        let bodies = try DuckMesh.bundled()
+        let bearing: (Float, Float, Float) = (0.7137, 0.7608, 0.8)
+        func isBearing(_ b: DuckMesh.Body) -> Bool {
+            abs(b.rgba.r - bearing.0) < 0.01 && abs(b.rgba.g - bearing.1) < 0.01
+                && abs(b.rgba.b - bearing.2) < 0.01
+        }
+        let head = try XCTUnwrap(bodies.first { $0.name == "bottom_head_shell" })
+        XCTAssertFalse(isBearing(head), "the head is painted with its bearing's colour")
+        let jaw = try XCTUnwrap(bodies.first { $0.name == "jaw" })
+        XCTAssertEqual(jaw.rgba.r, 0.9804, accuracy: 0.01, "the beak is Pollen's yellow")
+        XCTAssertLessThan(bodies.filter(isBearing).count, 3,
+                          "\(bodies.filter(isBearing).map(\.name)) are bearing-coloured")
+    }
 }

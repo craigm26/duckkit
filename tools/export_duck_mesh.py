@@ -30,6 +30,8 @@ Bodies are matched by TREE INDEX rather than by name, because the names are the
 thing that changed.
 
 Usage:  python3 tools/export_duck_mesh.py <model-dir> <output.bin>
+        python3 tools/export_duck_mesh.py --rollers <model-dir> <output.bin>
+    (the second builds duck-mesh-rollers.bin from robot_allcollisions_rollers.xml)
     where <model-dir> holds robot_allcollisions.xml and assets/*.stl from
     pollen-robotics/microduck_rl.
 """
@@ -62,6 +64,11 @@ JAW_QUAT = (0.7071067811865476, -0.7071067811865476, 0.0, 0.0)
 # read from that same file, so no correction is needed.
 ROLLER_BODIES = ["ankle_l_v1", "tire", "tire_2", "ankle_r_v1", "tire_3", "tire_4"]
 
+# Parts that live INSIDE the robot and must not decide a body's colour.
+HARDWARE = re.compile(r"xl330|bearing|pcb|lens|speaker|np_f970|motor_support|"
+                      r"power_support|rpi|hat|banana|elec|camera|imu|tof|noenoeil|face_part",
+                      re.IGNORECASE)
+
 
 def export_rollers(model_dir: str, out_path: str) -> int:
     upstream = open(os.path.join(model_dir, "robot_allcollisions_rollers.xml")).read()
@@ -82,8 +89,9 @@ def export_rollers(model_dir: str, out_path: str) -> int:
                 triangles.append(tuple(
                     (lambda r: (r[0] + gp[0], r[1] + gp[1], r[2] + gp[2]))(q_rotate(gq, v))
                     for v in tri))
-            if geom["material"] in materials and len(raw) > dominant:
-                dominant = len(raw)
+            weight = len(raw) * (0 if HARDWARE.search(geom["mesh"]) else 1) + 1
+            if geom["material"] in materials and weight > dominant:
+                dominant = weight
                 colour = materials[geom["material"]]
         if not triangles:
             print(f"  no visual geometry for {name}")
@@ -330,6 +338,9 @@ def main() -> int:
         print(__doc__.strip().splitlines()[-3])
         return 2
     if sys.argv[1] == "--rollers":
+        if len(sys.argv) < 4:
+            print("Usage: python3 tools/export_duck_mesh.py --rollers <model-dir> <output.bin>")
+            return 2
         return export_rollers(sys.argv[2], sys.argv[3])
     model_dir, out_path = sys.argv[1], sys.argv[2]
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -365,10 +376,13 @@ def main() -> int:
 
         triangles = []
         colour = (0.8, 0.8, 0.8, 1.0)
-        # ONE COLOUR PER BODY, AND IT IS THE BIGGEST PART'S. The first version
-        # kept whichever geom came LAST in the file, which painted the head
-        # speaker-grey and the trunk battery-black. The file format carries one
-        # rgba per body; the part with the most triangles is the one you see.
+        # ONE COLOUR PER BODY, AND IT IS THE BIGGEST VISIBLE PART'S. The first
+        # version kept whichever geom came LAST in the file (head speaker-grey);
+        # the second kept the most triangles, which upstream's 20,970-triangle
+        # export cap turns into "first capped geom in file order" — a bearing
+        # buried inside the joint, for 11 of 16 bodies. So hardware that lives
+        # inside the shells (servos, bearings, PCBs, lenses, speaker, battery)
+        # never sets a body's colour while any shell or printed part is present.
         dominant = 0
         for geom in geoms:
             # THE JAW SPLIT. Upstream fuses the lower beak into the head body
@@ -408,8 +422,9 @@ def main() -> int:
                     r = (r[0] + gp[0], r[1] + gp[1], r[2] + gp[2])
                     moved.append(q_rotate(delta, r))
                 triangles.append(tuple(moved))
-            if geom["material"] in materials and len(raw) > dominant:
-                dominant = len(raw)
+            weight = len(raw) * (0 if HARDWARE.search(geom["mesh"]) else 1) + 1
+            if geom["material"] in materials and weight > dominant:
+                dominant = weight
                 colour = materials[geom["material"]]
 
         if not triangles:

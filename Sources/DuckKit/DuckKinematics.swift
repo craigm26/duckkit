@@ -1,6 +1,6 @@
 import Foundation
 
-/// Forward kinematics for the Microduck — 14 joint angles in, every body and
+/// Forward kinematics for the Microduck — 15 joint angles in, every body and
 /// sensor pose out, at the robot's true scale.
 ///
 /// The chain below is the robot's own MuJoCo model (`robot_walk.xml`),
@@ -84,21 +84,29 @@ public enum DuckKinematics {
              position: DuckVector(-0.0179, 0.0, 0.0145),
              orientation: DuckQuaternion(w: 0.707107, x: -0.0, y: -0.707107, z: 0.0),
              sites: [Site(name: "head_camera", position: DuckVector(0.01175, 0.0, -0.0735)), Site(name: "tof", position: DuckVector(0.0143, 0.0225, -0.0735)), Site(name: "head_imu", position: DuckVector(0.0114823, 0.000202447, -0.05126))]),
-                // THE JAW — the one body here that Pollen's MJCF does not have.
+                // THE JAW — the one body here that Pollen's MJCF does not have, and
+        // an APPROXIMATION, labelled as such.
         //
-        // The real robot has a fifteenth servo, `mouth`, and a hinged lower
+        // The real robot has a fifteenth servo, `mouth`, and a moving lower
         // beak; Pollen's simulation plant fuses the beak into the head ("a
         // servo without an MJCF joint — the jaw is a fixed geom", their own
-        // bake script says), because no policy drives it. So there is no joint
-        // to copy. What there IS is the servo: `robot_allcollisions.xml` places
-        // the mouth's XL330 in the head at (0.003, 0.0255, −0.018) with its
-        // horn pointing along −y, and the same servo mesh sits at every other
-        // joint with its horn exactly 14.5 mm along that axis — which puts the
-        // mouth horn, and therefore the hinge, at (0.003, 0.040, −0.018) in
-        // the head frame with a lateral axis. The `jaw` mesh confirms it: its
-        // rear carries a hub of vertices 3–9 mm from that line and nothing
-        // else. Sense: +angle lowers the beak tip, so the runtime's
-        // −5° closed … +30° open reads as pressed-shut to wide.
+        // bake script says), because no policy drives it. Their plant also
+        // says what the real mechanism is: "the closed loop linkage positions
+        // it inside the head" (robot_allcollisions.xml, the contact-exclude
+        // comment) — a linkage, not a bare hinge. onshape-to-robot cannot
+        // export a closed loop, which is why the jaw came out fused.
+        //
+        // So this is a SINGLE-PIVOT STAND-IN for that linkage, built from
+        // the one thing the file does place: the mouth servo. Its XL330 sits
+        // in the head at (0.003, 0.0255, −0.018) with its horn toward the
+        // head's +Y (servo-local −X, as at every other joint, where the horn
+        // is 14.5 mm from the servo origin), which puts the horn — and this
+        // pivot — at (0.003, 0.040, −0.018); the bearing at (0.0032, −0.040,
+        // −0.018) is the axle's other end. The `jaw` mesh carries a hub of
+        // vertices 3–9 mm from that line. Sense: +angle lowers the beak tip,
+        // so the runtime's −5° closed … +30° open reads as pressed-shut to
+        // wide. The angle→tip map is the hinge's, not the linkage's: treat the
+        // opening as indicative, not as a measurement of the real beak.
         //
         // Hinge axis is body-local Z like every other joint; the orientation
         // is a −90° turn about X so that local Z is the head's +Y.
@@ -129,8 +137,7 @@ public enum DuckKinematics {
     ]
 
     /// Poses for every body, keyed by body name, for 15 joint angles in
-    /// standard joint order (the mouth is accepted and ignored — it is not in
-    /// the walk model). The trunk sits at the model's rest height, 0.12 m.
+    /// standard joint order (the mouth drives the `jaw` body — ours, derived; see its comment). The trunk sits at the model's rest height, 0.12 m.
     /// Where `bodyPoses` puts the trunk, in the frame it works in.
     ///
     /// READ THIS BEFORE PLACING THE ROBOT ANYWHERE. `bodyPoses` does NOT return
@@ -255,11 +262,14 @@ public enum DuckKinematics {
             if let joint = body.joint, let index = DuckModel.jointIndex(of: joint) {
                 orientation = (orientation * DuckQuaternion(aboutZ: jointAngles[index])).normalized
             } else if let joint = body.joint, joint.hasPrefix("passive_"), wheelSpin != 0 {
-                // Forward rolling is angular velocity along the world's −Y
-                // (right-hand rule, +X forward, +Z up); an axle whose local Z
-                // points that way takes +spin, one pointing the other way −spin.
+                // Forward rolling is angular velocity along the world's +Y:
+                // with +X forward and +Z up, ω = +Y carries the top of the
+                // wheel (r = +Z) by ω × r = +X. (The first version said −Y and
+                // every wheel moonwalked — the test now checks a rim point
+                // moves forward, not an axis sign.) An axle whose local Z
+                // points +Y takes +spin, one pointing −Y takes −spin.
                 let axle = orientation.rotate(DuckVector(0, 0, 1))
-                let sense: Double = axle.y < 0 ? 1 : -1
+                let sense: Double = axle.y > 0 ? 1 : -1
                 orientation = (orientation * DuckQuaternion(aboutZ: wheelSpin * sense)).normalized
             }
             poses[body.name] = Pose(position: position, orientation: orientation)
