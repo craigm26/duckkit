@@ -1,6 +1,6 @@
 # ADR-0002: A `.duckmove` must carry its base pose
 
-**Status:** proposed · **Date:** 2026-08-29
+**Status:** accepted and implemented in duckkit 1.28.0 · **Date:** 2026-08-29
 
 ## Context
 
@@ -191,3 +191,21 @@ from. That is documented in `skills/authored-moves.md`.
 **No Swift is changed by this ADR.** It records the defect and the shape of the
 fix so that whoever implements it does not have to rediscover which of the two
 readings the file meant.
+
+## What shipped
+
+`DuckMove` gained `base` and `posesAre`; `pose(at:)`, `offset(at:)` and
+`applied(to:)` all consult them and no longer take a base of their own, so the
+two readings cannot drift. `duck-move/2` writes `base` and `posesAre` every
+time — a reader that has to infer the base is the bug this version exists for.
+
+`duck-move/1` still reads, and still means what it always meant: absolute poses
+against the home pose. That was safe to assume because it was checked, not
+hoped — every call site across duckkit, Duck Studio and OpenCastor used the
+`DuckModel.homePose` default, so no shipped file can be reinterpreted by this
+change.
+
+The test that matters is `testTheTwoReadingsAgreeForAMoveAuthoredAgainstAnotherBase`:
+a reach authored from a crouch, where the old code's `applied(to:)` landed wrong
+by exactly the crouch.
+

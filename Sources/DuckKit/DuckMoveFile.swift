@@ -19,7 +19,14 @@ import Foundation
 /// bit-exactly; the validating initializer's tolerance absorbs that.
 public enum DuckMoveFile {
 
-    public static let format = "duck-move/1"
+    public static let format = "duck-move/2"
+
+    /// Formats this reader accepts. `duck-move/1` recorded times and poses and
+    /// nothing about what the poses were measured against; every such file
+    /// meant absolute joint angles read against the home pose, because that is
+    /// the only base any writer ever used. It still reads, and it still means
+    /// that — the difference is that a `duck-move/2` file SAYS so.
+    public static let readableFormats: Set<String> = ["duck-move/1", "duck-move/2"]
     public static let fileExtension = "duckmove"
 
     /// What a file holds once read: the motion, and where it came from.
@@ -77,7 +84,9 @@ public enum DuckMoveFile {
             throw ReadError.notAMove
         }
         guard let declared = object["format"] as? String else { throw ReadError.notAMove }
-        guard declared == format else { throw ReadError.unsupportedFormat(declared) }
+        guard readableFormats.contains(declared) else {
+            throw ReadError.unsupportedFormat(declared)
+        }
 
         // The joints array is the file's own claim about its pose layout.
         // Absent is tolerated (the order is then this package's, which is what
@@ -96,8 +105,23 @@ public enum DuckMoveFile {
         }
 
         let name = object["name"] as? String ?? "shared motion"
+        // A version-1 file carries no base, and its poses are absolute against
+        // the home pose — that is what every writer of that format meant.
+        let base = object["base"] as? [Double] ?? DuckModel.homePose
+        guard base.count == DuckModel.jointCount else {
+            throw ReadError.malformed(
+                "The motion's base pose has \(base.count) joints; the robot has "
+              + "\(DuckModel.jointCount).")
+        }
+        let posesAre = DuckMove.PosesAre(rawValue: object["posesAre"] as? String ?? "absolute")
+        guard let posesAre else {
+            throw ReadError.malformed(
+                "The motion says its poses are \"\(object["posesAre"] as? String ?? "")\", "
+              + "which is neither absolute nor offset.")
+        }
         do {
-            let move = try DuckMove(validating: name, times: times, poses: poses)
+            let move = try DuckMove(validating: name, times: times, poses: poses,
+                                    base: base, posesAre: posesAre)
             return Contents(name: name, move: move,
                             provenance: object["provenance"] as? String,
                             note: object["note"] as? String)
@@ -119,6 +143,10 @@ public enum DuckMoveFile {
             "joints": DuckModel.jointNames,
             "times": move.keyframes.map(\.time),
             "poses": move.keyframes.map(\.pose),
+            // Written every time, even when it is the home pose: a reader that
+            // has to infer the base is the bug this format version exists for.
+            "base": move.base,
+            "posesAre": move.posesAre.rawValue,
         ]
         if let provenance { object["provenance"] = provenance }
         if let note { object["note"] = note }

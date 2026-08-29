@@ -18,8 +18,14 @@ final class ZZExport: XCTestCase {
         o += "\"alphaHead\":\(DuckGait.Alphas.trained.head),"
         o += "\"alphaLegs\":\(DuckGait.Alphas.trained.legs)"
         o += "}"
-        try o.write(to: URL(fileURLWithPath: "/home/craigm26/projects/duck-sounds/sim/duckkit-constants.json"),
-                    atomically: true, encoding: .utf8)
-        print("EXPORTED \(o.count) bytes")
+        // AN ABSOLUTE PATH IN A TEST IS A TEST THAT PASSES ON ONE MACHINE.
+        // The sim harness genuinely wants these constants, so the export stays
+        // — but it writes only where DUCKKIT_CONSTANTS_OUT points, and skips
+        // everywhere else rather than failing on somebody else's clone.
+        guard let destination = ProcessInfo.processInfo.environment["DUCKKIT_CONSTANTS_OUT"] else {
+            throw XCTSkip("set DUCKKIT_CONSTANTS_OUT to a path to export the sim constants")
+        }
+        try o.write(to: URL(fileURLWithPath: destination), atomically: true, encoding: .utf8)
+        print("EXPORTED \(o.count) bytes to \(destination)")
     }
 }

@@ -44,12 +44,48 @@ public struct DuckMove: Equatable, Sendable {
     /// base pose, so a move always begins from wherever the duck already is.
     public let keyframes: [Keyframe]
 
-    public init(name: String, keyframes: [Keyframe]) {
+    /// What the keyframe poses are measured against.
+    ///
+    /// THE FILE RECORDED NEITHER, AND TWO METHODS DISAGREED. `pose(at:)` read a
+    /// keyframe as an ABSOLUTE pose; `applied(to:)` read the same array as an
+    /// OFFSET, by subtracting a base handed to it separately. Both defaulted to
+    /// `DuckModel.homePose`, so every caller in this family agreed by luck —
+    /// verified across all three apps: not one passed anything else. The luck
+    /// runs out the moment a motion authored elsewhere arrives, which is
+    /// exactly what publishing motions to a public hub invites. So a move now
+    /// carries its own base, both readings consult it, and they cannot drift.
+    public let base: [Double]
+
+    /// How to read a keyframe's pose against `base`.
+    public enum PosesAre: String, Equatable, Sendable {
+        /// Joint angles as they stand; `base` is only where the first segment
+        /// interpolates from. Every `duck-move/1` file means this.
+        case absolute
+        /// Deltas to add to `base`.
+        case offset
+    }
+
+    public let posesAre: PosesAre
+
+    /// A keyframe's pose as absolute joint angles, whichever way it is stored.
+    func absolutePose(_ frame: Keyframe) -> [Double] {
+        switch posesAre {
+        case .absolute: return frame.pose
+        case .offset:   return zip(base, frame.pose).map(+)
+        }
+    }
+
+    public init(name: String, keyframes: [Keyframe],
+                base: [Double] = DuckModel.homePose,
+                posesAre: PosesAre = .absolute) {
+        precondition(base.count == DuckModel.jointCount, "the base pose is all 15 joints")
         precondition(!keyframes.isEmpty, "a move needs at least one keyframe")
         precondition(zip(keyframes, keyframes.dropFirst()).allSatisfy { $0.time < $1.time },
                      "keyframes must be in strictly increasing time order")
         self.name = name
         self.keyframes = keyframes
+        self.base = base
+        self.posesAre = posesAre
     }
 
     /// How long the move lasts.
@@ -63,8 +99,7 @@ public struct DuckMove: Equatable, Sendable {
     /// blend arrives at every keyframe with a velocity step, and a servo asked
     /// to change speed instantaneously answers with a jolt the balance
     /// controller then has to absorb.
-    public func pose(at time: TimeInterval, from base: [Double] = DuckModel.homePose) -> [Double] {
-        precondition(base.count == DuckModel.jointCount, "the base pose is all 15 joints")
+    public func pose(at time: TimeInterval) -> [Double] {
         if time <= 0 { return base }
         var previousTime = 0.0
         var previousPose = base
@@ -75,22 +110,22 @@ public struct DuckMove: Equatable, Sendable {
                 // Exact at the ends. `a + (b - a) * 1` is not reliably `b` in
                 // floating point, and a keyframe that lands a hair short of the
                 // pose it names makes every downstream equality test lie.
-                if u >= 1 { return frame.pose }
+                if u >= 1 { return absolutePose(frame) }
                 if u <= 0 { return previousPose }
                 let s = u * u * (3 - 2 * u)
                 return (0..<DuckModel.jointCount).map {
-                    previousPose[$0] + (frame.pose[$0] - previousPose[$0]) * s
+                    previousPose[$0] + (absolutePose(frame)[$0] - previousPose[$0]) * s
                 }
             }
             previousTime = frame.time
-            previousPose = frame.pose
+            previousPose = absolutePose(frame)
         }
         return keyframes.last!.pose
     }
 
     /// What this move adds, relative to the base pose it is written against.
-    public func offset(at time: TimeInterval, from base: [Double] = DuckModel.homePose) -> [Double] {
-        let p = pose(at: time, from: base)
+    public func offset(at time: TimeInterval) -> [Double] {
+        let p = pose(at: time)
         return (0..<DuckModel.jointCount).map { p[$0] - base[$0] }
     }
 
@@ -106,7 +141,7 @@ public struct DuckMove: Equatable, Sendable {
                         base: [Double] = DuckModel.homePose) -> [Double] {
         precondition(policyTargets.count == DuckModel.jointCount,
                      "policy targets are all 15 joints")
-        let delta = offset(at: time, from: base)
+        let delta = offset(at: time)
         return (0..<DuckModel.jointCount).map { j in
             let want = policyTargets[j] + delta[j] * blend
             let range = DuckModel.jointRanges[j]
@@ -168,7 +203,13 @@ public struct DuckMove: Equatable, Sendable {
     /// `init(validatingPolicyPoses:times:poses:)`, both of which take raw
     /// arrays and never construct a keyframe until the numbers have passed.
     public init(validating name: String, keyframes: [Keyframe],
+                base: [Double] = DuckModel.homePose,
+                posesAre: PosesAre = .absolute,
                 enforceTravel: Bool = true) throws {
+        guard base.count == DuckModel.jointCount else {
+            throw Invalid.wrongWidth(keyframe: -1, got: base.count,
+                                     expected: DuckModel.jointCount)
+        }
         guard !keyframes.isEmpty else { throw Invalid.empty }
         for (index, frame) in keyframes.enumerated() {
             guard frame.time >= 0 else { throw Invalid.negativeTime(keyframe: index) }
@@ -188,6 +229,8 @@ public struct DuckMove: Equatable, Sendable {
         }
         self.name = name
         self.keyframes = keyframes
+        self.base = base
+        self.posesAre = posesAre
     }
 
     /// A move from raw poses somebody else supplied — the door untrusted data
@@ -199,6 +242,8 @@ public struct DuckMove: Equatable, Sendable {
     /// from a file, a share sheet or a model's output has to be validated
     /// BEFORE it becomes a keyframe, and this is where that happens.
     public init(validating name: String, times: [TimeInterval], poses: [[Double]],
+                base: [Double] = DuckModel.homePose,
+                posesAre: PosesAre = .absolute,
                 enforceTravel: Bool = true) throws {
         guard times.count == poses.count, !poses.isEmpty else { throw Invalid.empty }
         for (index, pose) in poses.enumerated() {
@@ -222,6 +267,8 @@ public struct DuckMove: Equatable, Sendable {
         }
         self.name = name
         self.keyframes = zip(times, poses).map { Keyframe(time: $0, pose: $1) }
+        self.base = base
+        self.posesAre = posesAre
     }
 
     /// The same, from the 14-wide poses every exported intent file actually
@@ -235,6 +282,8 @@ public struct DuckMove: Equatable, Sendable {
     public init(validatingPolicyPoses name: String,
                 times: [TimeInterval], poses: [[Double]],
                 mouth: Double = DuckModel.homePose[DuckModel.mouthIndex],
+                base: [Double] = DuckModel.homePose,
+                posesAre: PosesAre = .absolute,
                 enforceTravel: Bool = true) throws {
         guard times.count == poses.count else { throw Invalid.empty }
         let frames = try zip(times, poses).enumerated().map { index, pair -> Keyframe in
@@ -250,7 +299,8 @@ public struct DuckMove: Equatable, Sendable {
             full[DuckModel.mouthIndex] = mouth
             return Keyframe(time: time, pose: full)
         }
-        try self.init(validating: name, keyframes: frames, enforceTravel: enforceTravel)
+        try self.init(validating: name, keyframes: frames, base: base,
+                      posesAre: posesAre, enforceTravel: enforceTravel)
     }
 
     public func mirrored() -> DuckMove {

@@ -197,7 +197,7 @@ weights, same bytes in, same floats out to 1e-4.
 swift test
 ```
 
-Runs on Linux aarch64 (a Pi 5) and on macOS. 280 tests, no hardware, no network,
+Runs on Linux aarch64 (a Pi 5) and on macOS. 347 tests, no hardware, no network,
 no device — including the real trained policy, the synthesized voice, and the
 signing.
 
