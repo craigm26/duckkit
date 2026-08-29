@@ -50,6 +50,23 @@ public struct DuckTrajectory: Equatable, Sendable {
         case walkFast = "walk_fast"
         /// Turning on the spot. Mirror it for the other direction.
         case turnLeft = "turn_left"
+
+        // ON ROLLERS — BEST_roller.onnx on Pollen's rollers plant, recorded by
+        // record_rollers.mjs. A glide is propelled by a ~0.62 s leg swizzle,
+        // and these loop on whole swizzle cycles. The wheels are passive and
+        // not in the pose: a renderer rolls them from distance covered.
+        case skateStand = "skate_stand"
+        case skate
+        case skateFast = "skate_fast"
+        case skateBack = "skate_back"
+        /// Recorded with a +0.6 rad/s yaw command; on the older rollers plant
+        /// the policy turned the OTHER way, and the clip's deltaYaw says so.
+        case skateTurn = "skate_turn"
+
+        /// Which feet this clip was recorded on.
+        public var variant: DuckKinematics.Variant {
+            rawValue.hasPrefix("skate") ? .rollers : .legs
+        }
     }
 
     public let name: String

@@ -71,7 +71,7 @@ def export_rollers(model_dir: str, out_path: str) -> int:
     buckets = visual_geoms_by_body(upstream, bodies)
     entries, positions_blob, normals_blob, index_blob = [], bytearray(), bytearray(), bytearray()
     for name in ROLLER_BODIES:
-        triangles, colour = [], (0.8, 0.8, 0.8, 1.0)
+        triangles, colour, dominant = [], (0.8, 0.8, 0.8, 1.0), 0
         for geom in buckets.get(name, []):
             filename = mesh_files.get(geom["mesh"])
             if not filename:
@@ -82,7 +82,8 @@ def export_rollers(model_dir: str, out_path: str) -> int:
                 triangles.append(tuple(
                     (lambda r: (r[0] + gp[0], r[1] + gp[1], r[2] + gp[2]))(q_rotate(gq, v))
                     for v in tri))
-            if geom["material"] in materials:
+            if geom["material"] in materials and len(raw) > dominant:
+                dominant = len(raw)
                 colour = materials[geom["material"]]
         if not triangles:
             print(f"  no visual geometry for {name}")
@@ -364,6 +365,11 @@ def main() -> int:
 
         triangles = []
         colour = (0.8, 0.8, 0.8, 1.0)
+        # ONE COLOUR PER BODY, AND IT IS THE BIGGEST PART'S. The first version
+        # kept whichever geom came LAST in the file, which painted the head
+        # speaker-grey and the trunk battery-black. The file format carries one
+        # rgba per body; the part with the most triangles is the one you see.
+        dominant = 0
         for geom in geoms:
             # THE JAW SPLIT. Upstream fuses the lower beak into the head body
             # ("a servo without an MJCF joint"); DuckKinematics hinges it on
@@ -402,7 +408,8 @@ def main() -> int:
                     r = (r[0] + gp[0], r[1] + gp[1], r[2] + gp[2])
                     moved.append(q_rotate(delta, r))
                 triangles.append(tuple(moved))
-            if geom["material"] in materials:
+            if geom["material"] in materials and len(raw) > dominant:
+                dominant = len(raw)
                 colour = materials[geom["material"]]
 
         if not triangles:

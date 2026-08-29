@@ -75,6 +75,9 @@ public struct DuckIntentClip: Equatable, Sendable {
     /// always present because it is the single most useful piece of context:
     /// it is what says whether the feet are on the floor.
     public let environment: Environment
+    /// Which feet the recording was made on. Absent from every file before
+    /// the rollers existed, so it defaults to legs.
+    public let variant: DuckKinematics.Variant
 
     /// Who contributed it, for display only. Provenance is decided by the
     /// policy's fingerprint, never by this string.
@@ -185,13 +188,14 @@ public struct DuckIntentClip: Equatable, Sendable {
     public init(name: String, hz: Double, frames: [[Double]], roots: [Root],
                 netYaw: Double, loops: Bool, startsFrom: Posture, endsIn: Posture,
                 policy: String, authored: Bool, environment: Environment,
-                credit: String? = nil, telemetry: Telemetry = .none) {
+                credit: String? = nil, telemetry: Telemetry = .none,
+                variant: DuckKinematics.Variant = .legs) {
         self.name = name; self.hz = hz; self.frames = frames; self.roots = roots
         self.netYaw = netYaw; self.loops = loops
         self.startsFrom = startsFrom; self.endsIn = endsIn
         self.policy = policy; self.authored = authored
         self.environment = environment; self.credit = credit
-        self.telemetry = telemetry
+        self.telemetry = telemetry; self.variant = variant
     }
 
     /// The rate to compute with.
@@ -329,7 +333,8 @@ public struct DuckIntentClip: Equatable, Sendable {
                 // policy for a recording that never measured smoothness.
                 telemetry: Telemetry(actions: c["actions"] as? [[Double]] ?? [],
                                      commands: c["commands"] as? [[Double]] ?? [],
-                                     twists: c["twists"] as? [[Double]] ?? []))
+                                     twists: c["twists"] as? [[Double]] ?? []),
+                variant: DuckKinematics.Variant(rawValue: c["variant"] as? String ?? "legs") ?? .legs)
         }
         return out
     }

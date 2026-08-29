@@ -8,7 +8,7 @@ final class DuckIntentClipTests: XCTestCase {
 
     func testTheCorpusLoads() throws {
         let all = try clips()
-        XCTAssertEqual(all.count, 14)
+        XCTAssertEqual(all.count, 15)
         for name in ["hold", "kick_left", "sit", "stand", "roulade", "headspin"] {
             XCTAssertNotNil(all[name], "missing \(name)")
         }
