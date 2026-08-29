@@ -194,10 +194,20 @@ public struct DuckIntentClip: Equatable, Sendable {
         self.telemetry = telemetry
     }
 
+    /// The rate to compute with.
+    ///
+    /// ONE PLACE, because every consumer of `hz` divides or multiplies by it
+    /// and every one of them breaks differently on a bad value: `pose(at:)`
+    /// produced a negative index and trapped, `duration` produced infinity,
+    /// and an infinite duration is a Slider range a view cannot draw. The
+    /// decoder refuses a bad rate outright; this is what keeps a clip built
+    /// through the public initializer from taking a renderer down with it.
+    var rate: Double { hz.isFinite && hz > 0 ? hz : DuckModel.tickHz }
+
     /// A one-shot spans `count − 1` intervals: its last frame IS its end. A
     /// loop spans `count`, because it hands back to its first frame.
     public var duration: TimeInterval {
-        Double(loops ? frames.count : max(frames.count - 1, 0)) / hz
+        Double(loops ? frames.count : max(frames.count - 1, 0)) / rate
     }
 
     /// The pose at a time.
@@ -207,7 +217,15 @@ public struct DuckIntentClip: Equatable, Sendable {
     /// motion left it, which is what the robot would actually be doing.
     public func pose(at time: TimeInterval) -> Pose {
         precondition(!frames.isEmpty, "an empty clip has no pose")
-        let exact = max(time, 0) * hz
+        // A NON-POSITIVE OR NON-FINITE RATE CANNOT PRODUCE AN INDEX, AND THIS
+        // IS A RENDER-LOOP FUNCTION. A shared `.duckintent` carrying
+        // `"hz": -50` made `exact` negative; the one-sided `guard exact <
+        // frames.count - 1` below let it through, `index` came out −1, and
+        // `frames[-1]` trapped about twenty milliseconds after the clip opened
+        // — the playhead timer's first tick. Refusing the file is the
+        // decoder's job; not crashing on one that got past it is this
+        // function's, because a renderer has nowhere to put an error.
+        let exact = max(time, 0) * rate
         if loops {
             let index = Int(exact.truncatingRemainder(dividingBy: Double(frames.count)))
             return sample(index, next: (index + 1) % frames.count,
@@ -221,6 +239,10 @@ public struct DuckIntentClip: Equatable, Sendable {
     }
 
     private func sample(_ i: Int, next j: Int, fraction f: Double, finished: Bool) -> Pose {
+        // Clamped at BOTH ends. `roots[min(i, roots.count - 1)]` below only
+        // ever guarded the upper one, so a negative index trapped there too.
+        let last = frames.count - 1
+        let i = min(max(i, 0), last), j = min(max(j, 0), last)
         let a = frames[i], b = frames[j]
         var angles = [Double](repeating: 0, count: DuckModel.jointCount)
         for slot in 0..<min(a.count, DuckModel.policyJointCount) {
@@ -230,7 +252,9 @@ public struct DuckIntentClip: Equatable, Sendable {
         // The mouth is outside every policy's action space, so a recording
         // carries nothing for it. Home is the honest default.
         angles[DuckModel.mouthIndex] = DuckModel.homePose[DuckModel.mouthIndex]
-        return Pose(jointAngles: angles, root: roots[min(i, roots.count - 1)], hasFinished: finished)
+        return Pose(jointAngles: angles,
+                    root: roots[min(max(i, 0), max(roots.count - 1, 0))],
+                    hasFinished: finished)
     }
 
     // MARK: - loading
@@ -271,6 +295,11 @@ public struct DuckIntentClip: Equatable, Sendable {
               let hz = root["hz"] as? Double,
               let clips = root["clips"] as? [String: Any] else {
             throw LoadError.malformed("expected hz and clips")
+        }
+        // The decoder is where a bad rate gets a message. `pose(at:)` cannot
+        // give one — it is called from a render loop and has nowhere to put it.
+        guard hz.isFinite, hz > 0 else {
+            throw LoadError.malformed("a rate of \(hz) frames a second is not a rate")
         }
         var out: [String: DuckIntentClip] = [:]
         for (name, raw) in clips {

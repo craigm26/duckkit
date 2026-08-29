@@ -253,3 +253,57 @@ final class DuckIntentSuccessTests: XCTestCase {
         XCTAssertTrue(climb.criterion.contains("on the flight"))
     }
 }
+
+// MARK: - a rate that is not a rate
+
+extension DuckIntentClipTests {
+
+    /// A shared file carrying `"hz": -50` crashed the player about twenty
+    /// milliseconds after the clip opened — the playhead timer's first tick —
+    /// because a negative rate makes a negative index and the bounds check was
+    /// one-sided.
+    func testANegativeRateCannotProduceANegativeIndex() {
+        let clip = DuckIntentClip(
+            name: "hostile", hz: -50,
+            frames: [[Double](repeating: 0, count: DuckModel.policyJointCount),
+                     [Double](repeating: 0, count: DuckModel.policyJointCount)],
+            roots: [.init(x: 0, y: 0, z: 0.1, quaternion: (1, 0, 0, 0)),
+                    .init(x: 0, y: 0, z: 0.1, quaternion: (1, 0, 0, 0))],
+            netYaw: 0, loops: false, startsFrom: .standing, endsIn: .standing,
+            policy: "x.onnx", authored: false, environment: .bareFloor)
+        // Would have trapped. Every one of these must simply answer.
+        for time in [0.0, 0.02, 0.5, 4.0, -1.0] {
+            _ = clip.pose(at: time)
+        }
+        XCTAssertEqual(clip.pose(at: 0.02).jointAngles.count, DuckModel.jointCount)
+    }
+
+    func testAZeroRateDoesNotDivideOrTrap() {
+        let clip = DuckIntentClip(
+            name: "zero", hz: 0,
+            frames: [[Double](repeating: 0, count: DuckModel.policyJointCount)],
+            roots: [.init(x: 0, y: 0, z: 0.1, quaternion: (1, 0, 0, 0))],
+            netYaw: 0, loops: true, startsFrom: .standing, endsIn: .standing,
+            policy: "x.onnx", authored: false, environment: .bareFloor)
+        _ = clip.pose(at: 1.0)
+        XCTAssertTrue(clip.duration.isFinite)
+    }
+
+    /// And the decoder refuses it by name, because that is where a message can
+    /// actually reach somebody.
+    func testTheDecoderRefusesARateThatIsNotOne() {
+        for bad in ["-50", "0"] {
+            let json = """
+            {"hz":\(bad),"clips":{"c":{"frames":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0]],
+            "roots":[[0,0,0.1,1,0,0,0]],"policy":"x.onnx"}}}
+            """
+            XCTAssertThrowsError(try DuckIntentClip.decode(Data(json.utf8)),
+                                 "hz \(bad) must be refused") { error in
+                guard case DuckIntentClip.LoadError.malformed(let why) = error else {
+                    return XCTFail("wrong error for hz \(bad)")
+                }
+                XCTAssertTrue(why.contains("not a rate"), why)
+            }
+        }
+    }
+}
