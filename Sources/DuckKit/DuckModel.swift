@@ -94,11 +94,12 @@ public enum DuckModel {
     /// Scales raw policy output before it becomes a joint offset:
     /// `target = defaultPose + actionScale × action`.
     ///
-    /// TRAINING USED 1.0, AND EVERY POLICY FILE SAYS SO. Each `.onnx` carries
-    /// `action_scale = 1.0` in its metadata, and all six `microduck_rl` env
-    /// configs set the action term's scale to 1.0. 0.9 is this project's own
-    /// de-rating for the physical robot; a replay that wants to reproduce what
-    /// the network actually did must use 1.0, which is what the recorder does.
+    /// THE HARDWARE VALUE, FROM POLLEN'S OWN RUNTIME — robotd's `control.rs`
+    /// defaults `action_scale: 0.9`, and this package mirrors robotd. It is
+    /// NOT what training used: each `.onnx` carries `action_scale = 1.0` in
+    /// its metadata and all six `microduck_rl` env configs agree, so a replay
+    /// reproducing what the network did in simulation uses 1.0 (the recorder
+    /// does). Two truths, two domains: 0.9 on the robot, 1.0 in the sim.
     public static let actionScale = 0.9
 
     /// The standing policy is trained to be applied whole.
@@ -110,17 +111,20 @@ public enum DuckModel {
     /// First-order low-pass coefficients applied on the way to the servos:
     /// `target = α·new + (1−α)·previous`.
     ///
-    /// NOT A TRAINING CONSTANT, WHATEVER THIS COMMENT USED TO SAY. It claimed
-    /// these were "the coefficients the alpha policies were *trained with* —
-    /// they must match or sim-to-real transfer degrades", and there is no
-    /// support for that anywhere. Training applies no filter at all: mjlab's
-    /// joint-position action term is `raw × scale + offset` and nothing else,
-    /// its action manager contains no smoothing, and all six of Pollen's
-    /// `microduck_rl` env configs leave it that way.
+    /// POLLEN'S OWN, AND POLLEN'S OWN COMMENT IS WRONG ABOUT WHY. These values
+    /// mirror robotd's `control.rs` defaults (`head_lowpass: Some(0.5)`,
+    /// `legs_lowpass: Some(0.7)`), whose doc comment says the alpha policies
+    /// "are trained with 0.5 — it must match training or transfer degrades".
+    /// The training code contradicts it: mjlab's joint-position action term is
+    /// `raw × scale + offset` with no filter anywhere, and all six
+    /// `microduck_rl` env configs leave it that way. What training DOES model
+    /// is actuator lag — the BAM friction actuator delays actions by several
+    /// physics steps — so the hardware filter is best read as standing in for
+    /// dynamics the sim gets from its actuator model instead.
     ///
-    /// So this is a HARDWARE choice — smoothing what reaches a real servo —
-    /// and it belongs nowhere near a replay of what the policy did. The
-    /// recorder deliberately does not apply it.
+    /// Either way the rule for this package is unchanged: apply these when
+    /// modelling what robotd sends to servos; never in a replay of what a
+    /// policy did in simulation. The recorder deliberately does not.
     public static let headLowpass = 0.5
     public static let legsLowpass = 0.7
 
@@ -181,10 +185,21 @@ public enum DuckPolicyKind: String, CaseIterable, Equatable, Sendable {
     /// The ONNX file this policy ships as, in the upstream repo's `policies/`.
     public var fileName: String { rawValue + ".onnx" }
 
-    /// The action scale this policy runs at.
+    /// The action scale this policy runs at on the ROBOT.
+    ///
+    /// MIRRORS robotd's `control.rs`, per network, and the first cut got three
+    /// of them wrong. It returned 0.9 for everything but standing; robotd pins
+    /// roulade at `roulade_action_scale` (default 1.0), ground-pick at
+    /// `ground_pick_action_scale` (default 1.0), and the whole sit/rise cycle
+    /// at a literal 1.0 — "the prototype's `start_sit_toggle` pins the scale at
+    /// 1.0 for the whole sit/rise cycle", in its own words. Only walking and
+    /// the kicks-in-motion run de-rated at 0.9. A package that claims to model
+    /// the runtime and quietly de-rates a roulade by 10% is modelling a
+    /// different robot.
     public var actionScale: Double {
         switch self {
         case .stand: return DuckModel.standingActionScale
+        case .sitStand, .groundPick, .roulade: return 1.0
         default: return DuckModel.actionScale
         }
     }

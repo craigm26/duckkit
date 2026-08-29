@@ -60,3 +60,33 @@ final class DuckGaitTests: XCTestCase {
         XCTAssertEqual(DuckGait.locomotion(for: DuckCommand(head: (1, 1, 1, 1), bodyZ: 1)), .stand)
     }
 }
+
+// MARK: - the scales are robotd's, per network
+
+extension DuckGaitTests {
+
+    /// robotd pins roulade, ground-pick and the whole sit/rise cycle at 1.0,
+    /// and de-rates only walking and the kicks. The first cut of this mapping
+    /// returned 0.9 for all three — a package that claims to mirror the
+    /// runtime, quietly de-rating a roulade by 10%.
+    func testTheActionScalesMatchRobotdPerNetwork() {
+        XCTAssertEqual(DuckPolicyKind.stand.actionScale, 1.0)
+        XCTAssertEqual(DuckPolicyKind.sitStand.actionScale, 1.0)
+        XCTAssertEqual(DuckPolicyKind.groundPick.actionScale, 1.0)
+        XCTAssertEqual(DuckPolicyKind.roulade.actionScale, 1.0)
+        XCTAssertEqual(DuckPolicyKind.walk.actionScale, 0.9)
+        XCTAssertEqual(DuckPolicyKind.kickLeft.actionScale, 0.9)
+        XCTAssertEqual(DuckPolicyKind.kickRight.actionScale, 0.9)
+    }
+
+    /// The 10% is not cosmetic: a full-scale roulade action lands 10% further
+    /// from home under the fixed mapping than under the old one.
+    func testARouladeActionIsNoLongerDeRated() {
+        var action = [Float](repeating: 0, count: DuckModel.policyJointCount)
+        action[2] = 1.0   // left_hip_pitch, hard over
+        let stages = DuckGait.stages(action: action, previousTargets: nil,
+                                     kind: .roulade)
+        XCTAssertEqual(stages.scaled[2], DuckModel.homePose[2] + 1.0, accuracy: 1e-12,
+                       "roulade runs at scale 1.0, robotd's own value")
+    }
+}
