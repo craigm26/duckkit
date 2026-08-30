@@ -68,7 +68,13 @@ public struct DuckMove: Equatable, Sendable {
     public let posesAre: PosesAre
 
     /// A keyframe's pose as absolute joint angles, whichever way it is stored.
-    func absolutePose(_ frame: Keyframe) -> [Double] {
+    ///
+    /// PUBLIC BECAUSE READING A FILE BACK IS NOT SAMPLING IT. A reader that
+    /// wants the keyframes somebody wrote has to ask for them; asking
+    /// `pose(at:)` for the pose at each keyframe's own time is a different
+    /// question that happens to agree most of the time, and disagreed exactly
+    /// at `t = 0` for as long as the short-circuit below was unconditional.
+    public func absolutePose(_ frame: Keyframe) -> [Double] {
         switch posesAre {
         case .absolute: return frame.pose
         case .offset:   return zip(base, frame.pose).map(+)
@@ -100,7 +106,20 @@ public struct DuckMove: Equatable, Sendable {
     /// to change speed instantaneously answers with a jolt the balance
     /// controller then has to absorb.
     public func pose(at time: TimeInterval) -> [Double] {
-        if time <= 0 { return base }
+        // A MOVE IS ALLOWED TO OPEN ON A KEYFRAME, AND THIS LINE USED TO MAKE
+        // THAT KEYFRAME UNREACHABLE. Returning `base` for every non-positive
+        // time is right only when the first keyframe happens later — then
+        // there is a real span to interpolate across and the duck starts from
+        // wherever it already was. When a move's first keyframe sits AT zero
+        // there is no such span, and answering `base` meant the opening pose
+        // of the motion could be sampled at every instant except its own: an
+        // authored crouch played standing for one tick and then snapped. Every
+        // motion this family's editor writes starts at 0.00 s, so this was not
+        // an edge case, it was the common case.
+        if time <= 0 {
+            if let first = keyframes.first, first.time <= 0 { return absolutePose(first) }
+            return base
+        }
         var previousTime = 0.0
         var previousPose = base
         for frame in keyframes {

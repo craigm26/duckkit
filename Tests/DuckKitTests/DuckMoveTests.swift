@@ -23,6 +23,46 @@ final class DuckMoveTests: XCTestCase {
         XCTAssertEqual(m.pose(at: -1), DuckModel.homePose)
     }
 
+    /// A move whose first keyframe sits AT zero opens on that keyframe, not on
+    /// the base. Every motion the editor writes starts at 0.00 s, so for as
+    /// long as `pose(at:)` answered `base` for all non-positive times, the
+    /// opening pose of an authored motion was the one instant it could not be
+    /// sampled at: posing it moved nothing on screen, and a reader that
+    /// recovered keyframes by sampling silently replaced it with the home
+    /// stance.
+    func testAMoveThatOpensOnAKeyframeOpensOnThatKeyframe() {
+        var opening = DuckModel.homePose; opening[5] = 1.5
+        var later = DuckModel.homePose; later[5] = 0.2
+        let m = DuckMove(name: "opens at zero", keyframes: [
+            .init(time: 0.0, pose: opening),
+            .init(time: 1.0, pose: later),
+        ])
+        XCTAssertEqual(m.pose(at: 0), opening)
+        XCTAssertEqual(m.pose(at: -1), opening)
+        // And it does not jump: one microsecond later is still essentially the
+        // opening pose, where before the fix it leapt the whole way from home.
+        XCTAssertEqual(m.pose(at: 1e-6)[5], opening[5], accuracy: 1e-4)
+    }
+
+    /// Read as offsets, the opening keyframe is still resolved against the base
+    /// rather than handed back raw.
+    func testAnOpeningKeyframeIsResolvedThroughTheReadingMode() {
+        var delta = [Double](repeating: 0, count: DuckModel.jointCount); delta[5] = 0.25
+        let m = DuckMove(name: "offset at zero",
+                         keyframes: [.init(time: 0.0, pose: delta),
+                                     .init(time: 1.0, pose: delta)],
+                         base: DuckModel.homePose, posesAre: .offset)
+        XCTAssertEqual(m.pose(at: 0)[5], DuckModel.homePose[5] + 0.25, accuracy: 1e-12)
+    }
+
+    /// The keyframes somebody wrote are readable as such, without sampling.
+    func testAbsolutePoseIsReachableFromOutsideThePackage() {
+        var opening = DuckModel.homePose; opening[5] = 1.5
+        let m = DuckMove(name: "readable", keyframes: [.init(time: 0.0, pose: opening),
+                                                       .init(time: 1.0, pose: DuckModel.homePose)])
+        XCTAssertEqual(m.absolutePose(m.keyframes[0]), opening)
+    }
+
     func testItHoldsTheLastKeyframeAfterTheEnd() {
         let m = simple()
         XCTAssertEqual(m.pose(at: m.duration), m.keyframes.last!.pose)
