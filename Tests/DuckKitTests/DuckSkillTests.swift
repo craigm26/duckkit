@@ -58,6 +58,16 @@ final class DuckSkillTests: XCTestCase {
         XCTAssertEqual(DuckModel.kickDuration, 0.5, accuracy: 1e-12, "half a second of kick")
         XCTAssertEqual(DuckModel.rouladeDuration, 1.0, accuracy: 1e-12, "one forward roll")
         XCTAssertEqual(DuckModel.groundPickPeriod, 4.0, accuracy: 1e-12, "one pick cycle")
+        // The robot cuts the cycle at phase 0.7, so what actually runs is 2.8 s.
+        XCTAssertEqual(DuckModel.groundPickEndPhase, 0.7, accuracy: 1e-12)
+        XCTAssertEqual(DuckModel.groundPickDuration, 2.8, accuracy: 1e-12)
+        XCTAssertEqual(DuckSkill.groundPick.runtimeDuration, 2.8)
+        XCTAssertNotEqual(DuckSkill.groundPick.runtimeDuration,
+                          DuckSkill.groundPick.nominalDuration,
+                          "the period is not the window; only ground pick differs")
+        for skill in DuckSkill.allCases where skill != .groundPick {
+            XCTAssertEqual(skill.runtimeDuration, skill.nominalDuration)
+        }
     }
 
     /// The same windows in control ticks, at the loop's own 50 Hz.

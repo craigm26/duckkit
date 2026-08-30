@@ -77,12 +77,25 @@ public enum DuckSkill: String, CaseIterable, Equatable, Sendable {
     ///
     /// Ground pick's four seconds is upstream's *period* — one cycle of the
     /// pick — and not a promise that anything is in the beak at the end of it.
+    /// IT IS ALSO NOT HOW LONG THE ROBOT RUNS IT: robotd stops at phase 0.7,
+    /// so the window that actually happens is 2.8 s. Use `runtimeDuration` for
+    /// a progress bar and this one only when you mean the training period.
     public var nominalDuration: Double? {
         switch self {
         case .kickLeft, .kickRight: return DuckModel.kickDuration
         case .roulade: return DuckModel.rouladeDuration
         case .groundPick: return DuckModel.groundPickPeriod
         case .sitToggle: return nil
+        }
+    }
+
+    /// How long the skill runs ON THE ROBOT, which for ground pick is not its
+    /// period: robotd cuts the phase at 0.7, giving 2.8 s of a 4 s cycle. Every
+    /// other skill runs the whole thing.
+    public var runtimeDuration: Double? {
+        switch self {
+        case .groundPick: return DuckModel.groundPickDuration
+        default: return nominalDuration
         }
     }
 

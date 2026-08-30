@@ -134,8 +134,26 @@ public enum DuckModel {
     /// One roulade — one forward roll, seconds.
     public static let rouladeDuration = 1.0
 
-    /// One ground-pick cycle, seconds.
+    /// One ground-pick cycle, seconds. `GP_PERIOD` in microduck_rl's
+    /// `microduck_ground_pick_env_cfg.py` and `ground_pick_period` in the
+    /// robot's `robotd/src/control.rs`; both say 4.0.
     public static let groundPickPeriod = 4.0
+
+    /// The phase at which the ROBOT stops driving ground pick.
+    /// `GROUND_PICK_END_PHASE` in `robotd/src/control.rs`.
+    ///
+    /// THE RUN IS CUT BEFORE THE RETURN FINISHES, and upstream knows it. The
+    /// training config's rise does not complete until phase 0.80, and its own
+    /// comment flags the gap: "⚠️ RISE_END=0.80 > coupure φ=0.7 du script
+    /// infer_policy". So a real ground pick ends with the head a few degrees
+    /// short of home — our recording of the policy ends with the mouth tip
+    /// 7 mm higher than it started. Anything sequencing a pick has to allow
+    /// for that rather than assume a clean stand.
+    public static let groundPickEndPhase = 0.7
+
+    /// How long a ground pick actually runs on the robot: 2.8 s, not the 4 s
+    /// period. This is the number a progress bar should use.
+    public static let groundPickDuration = groundPickPeriod * groundPickEndPhase
 
     // ── battery ──────────────────────────────────────────────────────────
 

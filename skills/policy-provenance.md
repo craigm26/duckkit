@@ -61,11 +61,44 @@ fingerprint:
 | `alpha_walking.onnx` | Walking at a commanded velocity — the default gait |
 | `BEST_alpha_stand.onnx` | Standing still and staying there |
 | `BEST_alpha_sitstand.onnx` | Sitting down and getting back up |
-| `alpha_ground_pick.onnx` | Reaching down to pick something up |
+| `alpha_ground_pick.onnx` | Reaching the mouth down to just above the ground, and standing back up. **It does not pick anything up** — see below |
 | `ball_kick_left.onnx` / `ball_kick_right.onnx` | Kicking |
 | `roulade.onnx` | A forward roll |
 | `BEST_roller.onnx` | Rolling on skate wheels |
 | `BEST_roller_crouch.onnx` | Crouching low while rolling |
+
+### Ground pick does not pick anything up
+
+Upstream's own docstring: the policy "crouches to bring its mouth tip AS CLOSE
+AS POSSIBLE to the ground WITHOUT touching it ... then returns to a clean
+standing pose". A strong head-impact penalty sits against the reach reward, and
+the equilibrium between them is a mouth hovering just above the floor. There is
+no grasp in it, and there could not be: **the mouth is the fifteenth servo and
+no policy drives it** — all seven alpha networks are 61→14, and the mouth is the
+one joint they do not command.
+
+What upstream DOES model is carrying something. `sample_mouth_payload` draws
+**10–40 g** per episode and `mouth_payload_force` applies it at the mouth tip
+through the rise, so lifting a light object is inside the training distribution.
+The grasp itself is yours to command on joint 9.
+
+Three numbers worth having, measured through this package's kinematics over our
+own recording of the policy rather than read off the config:
+
+| | |
+|---|---|
+| Mouth tip at its lowest, open | **34.9 mm** above the floor, at **1.16 s** |
+| Within 5 mm of that low point | **0.76 s – 1.50 s** — the window a grasp has to land in |
+| Mouth tip with the jaw shut, at that instant | **20.0 mm** — anything thinner passes under the bite |
+
+**The measurement disagrees with the config, and the measurement is the one to
+use.** The env's reward schedule calls phase 0.375–0.425 the low hold — 1.50 s
+to 1.70 s — but the plant bottoms out at 1.16 s and is already climbing by
+1.50 s. Close the jaw on the config's window and you close it on the way up.
+
+The jaw body and its `mouth_tip` site are OURS, derived from where the mouth
+servo sits, because upstream's mesh does not split the head. The 20 mm is only
+as good as that derivation.
 
 `filename` is **a hint for display, never an identity** — four of the nine differ
 from upstream's shipping names. The fingerprint is the identity.
