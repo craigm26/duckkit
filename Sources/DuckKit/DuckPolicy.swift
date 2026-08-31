@@ -138,8 +138,32 @@ public struct DuckPolicy: Sendable {
     let std: [Float]
     let layers: [Layer]
 
+    /// The parameters, in the shape a writer wants them.
+    ///
+    /// READABLE BECAUSE A POLICY THAT CANNOT BE WRITTEN BACK CANNOT BE
+    /// COMBINED. Every network this loader accepts has the identical
+    /// architecture — it refuses anything else — so a weighted average of two
+    /// of them is a valid policy in the only sense this file recognises, and
+    /// blending is the one interesting thing a phone can do with trained
+    /// networks it has no way to retrain. That needs the numbers.
+    ///
+    /// It hands back copies of what was parsed. Nothing here can be mutated
+    /// into a policy that disagrees with the file it came from.
+    public var parameters: (mean: [Float], std: [Float], layers: [DuckPolicyWriter.Layer]) {
+        (mean, std, layers.map {
+            DuckPolicyWriter.Layer(weights: $0.weights, biases: $0.biases,
+                                   inputs: $0.inputs, outputs: $0.outputs)
+        })
+    }
+
+    /// This policy, as ONNX bytes this package will load again.
+    public func encoded() throws -> Data {
+        let p = parameters
+        return try DuckPolicyWriter.encoded(mean: p.mean, std: p.std, layers: p.layers)
+    }
+
     /// Expected layer widths, outermost first.
-    static let expectedWidths = [(61, 512), (512, 256), (256, 128), (128, 14)]
+    public static let expectedWidths = [(61, 512), (512, 256), (256, 128), (128, 14)]
 
     // ── what a loaded policy is made of ───────────────────────────────────
 
