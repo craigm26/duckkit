@@ -97,20 +97,51 @@ public enum DuckPolicyWriter {
         return body
     }
 
-    private static func node(_ op: String, inputs: [String], transB: Bool = false) -> [UInt8] {
+    /// One node. **The output name is field 2 and it is not optional**, however
+    /// much this package's own reader gets by without it: `DuckPolicy` infers
+    /// the chain from position and never reads an output, so a graph with none
+    /// loaded here and onnxruntime said "This is an invalid model. Graph output
+    /// (actions) does not exist in the graph." A graph is a graph because its
+    /// edges are named.
+    private static func node(_ op: String, inputs: [String], output: String,
+                             transB: Bool = false) -> [UInt8] {
         var body: [UInt8] = []
         for i in inputs { body += stringField(1, i) }
+        body += stringField(2, output)
         body += stringField(4, op)
         if transB {
-            // AttributeProto: name "transB", i = 1. The reader looks for
-            // exactly this to know the weights are [outputs][inputs].
-            body += delimited(5, stringField(1, "transB") + varintField(3, 1))
+            // AttributeProto: name "transB", i = 1, AND type = INT.
+            //
+            // FIELD 20 IS REQUIRED AND THIS PACKAGE'S READER NEVER LOOKED AT
+            // IT. Without it onnxruntime says "Error Field 'type' of 'attr' is
+            // required but missing" — an attribute has to say which of its
+            // several value fields is the real one, even when only one is set.
+            // AttributeType: FLOAT = 1, INT = 2.
+            body += delimited(5, stringField(1, "transB")
+                                 + varintField(3, 1)
+                                 + varintField(20, 2))
         }
         return body
     }
 
-    private static func valueInfo(_ name: String) -> [UInt8] {
-        stringField(1, name)
+    /// A graph input or output, WITH ITS TYPE. A bare name is enough for this
+    /// package's reader and not for a real one: ONNX requires a ValueInfoProto
+    /// to carry a TypeProto, and the leading dimension is left symbolic —
+    /// robotd's own `check_width` says "the leading dimension is the batch and
+    /// is usually dynamic, so only the last one is checked", which is exactly
+    /// the shape a trained export has.
+    ///
+    ///     ValueInfoProto   1 = name  2 = type
+    ///     TypeProto        1 = tensor_type
+    ///     Tensor           1 = elem_type  2 = shape
+    ///     TensorShapeProto 1 = dim
+    ///     Dimension        1 = dim_value  2 = dim_param
+    private static func valueInfo(_ name: String, width: Int) -> [UInt8] {
+        let batch = delimited(1, stringField(2, "batch"))     // dim_param
+        let fixed = delimited(1, varintField(1, UInt64(width)))
+        let shape = delimited(2, batch + fixed)
+        let tensor = delimited(1, varintField(1, 1) + shape)  // elem_type 1 = FLOAT
+        return stringField(1, name) + delimited(2, tensor)
     }
 
     // MARK: - writing a policy
@@ -153,23 +184,47 @@ public enum DuckPolicyWriter {
         // The normaliser, then four Gemm/ELU pairs with the last ELU dropped —
         // the same nine ops in the same order the reader insists on.
         var nodes: [[UInt8]] = [
-            node("Sub", inputs: ["obs", "mean"]),
-            node("Div", inputs: ["sub_out", "std"]),
+            node("Sub", inputs: ["obs", "mean"], output: "sub_out"),
+            node("Div", inputs: ["sub_out", "std"], output: "h0"),
         ]
         for (i, layer) in layers.enumerated() {
             initializers.append(tensor("w\(i)", dims: [layer.outputs, layer.inputs],
                                        floats: layer.weights))
             initializers.append(tensor("b\(i)", dims: [layer.outputs], floats: layer.biases))
-            nodes.append(node("Gemm", inputs: ["h\(i)", "w\(i)", "b\(i)"], transB: true))
-            if i < layers.count - 1 { nodes.append(node("Elu", inputs: ["g\(i)"])) }
+            let last = i == layers.count - 1
+            // The final Gemm writes straight to `actions`; there is no ELU
+            // after it, which is the ninth op and the end of the chain.
+            nodes.append(node("Gemm", inputs: ["h\(i)", "w\(i)", "b\(i)"],
+                              output: last ? "actions" : "g\(i)", transB: true))
+            if !last { nodes.append(node("Elu", inputs: ["g\(i)"], output: "h\(i + 1)")) }
         }
 
         var graph: [UInt8] = []
         for n in nodes { graph += delimited(1, n) }
         for t in initializers { graph += delimited(5, t) }
-        graph += delimited(11, valueInfo("obs"))
-        graph += delimited(12, valueInfo("actions"))
-        return Data(delimited(7, graph))
+        graph += delimited(11, valueInfo("obs", width: mean.count))
+        graph += delimited(12, valueInfo("actions", width: layers[layers.count - 1].outputs))
+
+        // THE GRAPH ALONE IS NOT A FILE ANY OTHER RUNTIME WILL OPEN, and this
+        // package's own reader is not the check that catches it. `DuckPolicy`
+        // walks straight to field 7 and never looks at the header, so a file
+        // with only a graph round-tripped through load/encode/load perfectly —
+        // and onnxruntime refused it outright: "Missing opset in the model. All
+        // ModelProtos MUST have at least one entry that specifies which version
+        // of the ONNX OperatorSet is being imported." Found by uploading one to
+        // a real bench, which is the only place that question gets asked
+        // honestly.
+        //
+        // Both numbers are what Pollen's own `alpha_walking.onnx` carries, read
+        // out of its bytes rather than chosen: ir_version 8, and a single
+        // opset_import with no domain — the default ONNX domain — at version
+        // 18. Emitting what the trained files emit is the only defensible way
+        // to pick these.
+        var model: [UInt8] = []
+        model += varintField(1, 8)                          // ir_version
+        model += delimited(7, graph)
+        model += delimited(8, varintField(2, 18))           // opset_import: default domain, v18
+        return Data(model)
     }
 
     /// One dense layer, in the order the file wants it: weights row-major
