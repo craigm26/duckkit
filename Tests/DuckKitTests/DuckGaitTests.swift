@@ -91,3 +91,33 @@ extension DuckGaitTests {
                        "roulade runs at scale 1.0, robotd's own value")
     }
 }
+
+extension DuckGaitTests {
+
+    /// A KNOWN scale beats a guessed one.
+    ///
+    /// `kind` can only be inferred from a file name, which matches nothing for
+    /// a policy somebody trained themselves — so a community policy silently
+    /// gets walking's 0.9. A published manifest states the real number.
+    func testAnExplicitScaleOverridesTheOneTheKindWouldPick() {
+        let action = [Float](repeating: 0.5, count: DuckModel.policyJointCount)
+        let guessed = DuckGait.stages(action: action, previousTargets: nil, kind: .walk)
+        let declared = DuckGait.stages(action: action, previousTargets: nil,
+                                       kind: .walk, scale: 1.0)
+        XCTAssertNotEqual(guessed.scaled, declared.scaled,
+                          "0.9 and 1.0 must not produce the same targets")
+        // The declared one is exactly the walking one divided by 0.9, around
+        // HOME — which is the 10% the guess was costing.
+        let joint = DuckModel.jointOfPolicySlot(0)
+        let guessedOffset = guessed.scaled[joint] - DuckModel.homePose[joint]
+        let declaredOffset = declared.scaled[joint] - DuckModel.homePose[joint]
+        XCTAssertEqual(declaredOffset, guessedOffset / DuckModel.actionScale, accuracy: 1e-12)
+    }
+
+    func testNoExplicitScaleKeepsTheOldBehaviourExactly() {
+        let action = [Float](repeating: 0.3, count: DuckModel.policyJointCount)
+        XCTAssertEqual(DuckGait.stages(action: action, previousTargets: nil, kind: .roulade).scaled,
+                       DuckGait.stages(action: action, previousTargets: nil,
+                                       kind: .roulade, scale: nil).scaled)
+    }
+}

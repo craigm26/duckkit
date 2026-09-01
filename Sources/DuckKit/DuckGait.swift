@@ -112,7 +112,14 @@ public enum DuckGait {
     ///     must be fed back as `lastAction` in the next observation.
     ///   - previousTargets: last tick's filtered targets, or nil on the first
     ///     tick (the filter then starts from this tick's own values).
-    ///   - kind: which policy produced the action — selects the action scale.
+    ///   - kind: which policy produced the action — selects the action scale,
+    ///     unless `scale` overrides it.
+    ///   - scale: the action scale to use, when it is KNOWN rather than
+    ///     inferred. `kind` can only be guessed from a file name, which matches
+    ///     nothing for a policy somebody trained themselves — so a community
+    ///     policy silently gets walking's 0.9 whatever it actually wants. A
+    ///     published policy states `action_scale` in its manifest; pass it here
+    ///     and the guess is not consulted.
     ///   - mouth: target for the mouth joint, which no policy commands; it is
     ///     placed in `scaled` and then carried through untouched by the
     ///     filter, exactly as the runtime carries it.
@@ -123,6 +130,7 @@ public enum DuckGait {
         action: [Float],
         previousTargets: [Double]?,
         kind: DuckPolicyKind = .walk,
+        scale: Double? = nil,
         mouth: Double = 0,
         alphas: Alphas = .robotd
     ) -> Stages {
@@ -134,7 +142,7 @@ public enum DuckGait {
         let offsets = DuckObservation.scatterAction(action)
         var scaled = [Double](repeating: 0, count: DuckModel.jointCount)
         for joint in 0..<DuckModel.jointCount {
-            scaled[joint] = DuckModel.homePose[joint] + kind.actionScale * offsets[joint]
+            scaled[joint] = DuckModel.homePose[joint] + (scale ?? kind.actionScale) * offsets[joint]
         }
         scaled[DuckModel.mouthIndex] = mouth
 
