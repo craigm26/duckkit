@@ -51,7 +51,7 @@ public struct DuckTrajectory: Equatable, Sendable {
         /// Turning on the spot. Mirror it for the other direction.
         case turnLeft = "turn_left"
 
-        // ON ROLLERS — BEST_roller.onnx on Pollen's rollers plant, recorded by
+        // ON ROLLERS — roller.onnx on Pollen's rollers plant, recorded by
         // record_rollers.mjs. A glide is propelled by a ~0.62 s leg swizzle,
         // and these loop on whole swizzle cycles. The wheels are passive and
         // not in the pose: a renderer rolls them from distance covered.

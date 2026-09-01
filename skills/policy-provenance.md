@@ -59,13 +59,13 @@ fingerprint:
 | Filename as vendored here | Does |
 |---|---|
 | `alpha_walking.onnx` | Walking at a commanded velocity — the default gait |
-| `BEST_alpha_stand.onnx` | Standing still and staying there |
-| `BEST_alpha_sitstand.onnx` | Sitting down and getting back up |
+| `alpha_stand.onnx` | Standing still and staying there |
+| `alpha_sitstand.onnx` | Sitting down and getting back up |
 | `alpha_ground_pick.onnx` | Reaching the mouth down to just above the ground, and standing back up. **It does not pick anything up** — see below |
 | `ball_kick_left.onnx` / `ball_kick_right.onnx` | Kicking |
 | `roulade.onnx` | A forward roll |
-| `BEST_roller.onnx` | Rolling on skate wheels |
-| `BEST_roller_crouch.onnx` | Crouching low while rolling |
+| `roller.onnx` | Rolling on skate wheels |
+| `roller_crouch.onnx` | Crouching low while rolling |
 
 ### Ground pick does not pick anything up
 
