@@ -227,6 +227,108 @@ public enum DuckPolicyWriter {
         return Data(model)
     }
 
+    // MARK: - folding a per-joint residual into the network
+
+    /// A policy that already does `gain ⊙ action + offset`, with the residual
+    /// absorbed into its last layer instead of applied by whatever runs it.
+    ///
+    /// WHY THIS IS THE ONLY HONEST WAY TO SHIP A TUNED DUCK. robotd takes an
+    /// ONNX and a handful of config keys and nothing else — there is no hook
+    /// for "and then multiply the ninth output by 1.07". So a per-joint gain
+    /// and trim found by searching in a simulator has exactly two fates: it
+    /// gets folded into the file, or it never reaches the robot. Anything that
+    /// asks the operator to also edit `control.rs` is not a shipped policy, it
+    /// is a patch with a policy attached.
+    ///
+    /// THE ARITHMETIC IS EXACT, AND THAT IS THE WHOLE POINT. The last Gemm is
+    /// the last op in the graph — `DuckPolicy.load` refuses any file where it
+    /// is not, and there is no ELU after it — so its output IS the action.
+    /// For that layer alone,
+    ///
+    ///     a  = W·h + b
+    ///     a' = gain ⊙ a + offset = (diag(gain)·W)·h + (gain ⊙ b + offset)
+    ///
+    /// which is another Gemm of the identical shape. Row `j` of `W` scaled by
+    /// `gain[j]`, bias `j` scaled and shifted. No new op, no new initializer,
+    /// no widening: the file that comes out is the same 197,774 parameters in
+    /// the same nine ops, and every loader that took the original takes it.
+    /// Fold anywhere but the last layer and this identity is false, because an
+    /// ELU sits between it and the output and ELU does not commute with a
+    /// scale.
+    ///
+    /// FOURTEEN, NOT FIFTEEN — THE MOUTH IS NOT ADDRESSABLE HERE. The robot
+    /// has fifteen joints and every alpha policy has fourteen outputs, because
+    /// the mouth (`DuckModel.mouthIndex`, joint 9) is absent from the action
+    /// vector entirely. So `gain` and `offset` are indexed by POLICY SLOT, the
+    /// same index `DuckObservation.scatterAction` and `DuckModel.jointOfPolicySlot`
+    /// use, and the mouth is excluded by construction rather than by being
+    /// skipped: there is no row of `W` that belongs to it. A caller holding a
+    /// 15-wide per-joint array must drop index 9 — `DuckObservation.policyJoints`
+    /// is that operation — and a 15-wide array handed straight to this is
+    /// refused rather than silently shifting every joint past the mouth by one,
+    /// which is the same off-by-one `jointOfPolicySlot` exists to prevent and
+    /// is just as silent here.
+    ///
+    /// WHAT IS DELIBERATELY NOT FOLDED: `action_scale`. robotd multiplies this
+    /// network's output by its own `action_scale` before it becomes a joint
+    /// offset (`DuckGait.stages`, `DuckModel.actionScale`), and that key stays
+    /// where it is. Folding a scale in would mean the file and the config both
+    /// claimed the same authority, and the robot would apply the product of the
+    /// two — a policy that walks in the search and de-rates itself by 10% on
+    /// hardware. A gain found here is a per-joint SHAPE change on top of
+    /// whatever scale the runtime is configured for, and `DuckPolicyWriterFoldTests`
+    /// asserts that the scale is still live after a fold.
+    ///
+    /// - Parameters:
+    ///   - policy: the network to fold into. Any policy this package loads.
+    ///   - gain: 14 per-slot multipliers, policy order, mouth excluded.
+    ///   - offset: 14 per-slot additive trims, radians of raw action, same order.
+    public static func folding(policy: DuckPolicy, gain: [Double], offset: [Double]) throws -> DuckPolicy {
+        let width = DuckModel.policyJointCount
+        guard gain.count == width else {
+            throw WriteError.wrongShape(
+                "the gain is \(gain.count) wide, not \(width) — the mouth has no policy output, "
+                + "so a 15-joint array has to have index \(DuckModel.mouthIndex) dropped first")
+        }
+        guard offset.count == width else {
+            throw WriteError.wrongShape(
+                "the offset is \(offset.count) wide, not \(width) — the mouth has no policy output, "
+                + "so a 15-joint array has to have index \(DuckModel.mouthIndex) dropped first")
+        }
+        guard gain.allSatisfy({ $0.isFinite }), offset.allSatisfy({ $0.isFinite }) else {
+            throw WriteError.wrongShape("the gain or the offset holds something that is not a number")
+        }
+
+        let p = policy.parameters
+        guard var last = p.layers.last, p.layers.count == DuckPolicy.expectedWidths.count else {
+            throw WriteError.wrongShape("it has \(p.layers.count) layers, not "
+                                        + "\(DuckPolicy.expectedWidths.count)")
+        }
+        guard last.outputs == width else {
+            throw WriteError.wrongShape("its last layer is \(last.outputs) wide, not \(width)")
+        }
+
+        // Row-major `[outputs][inputs]`, so row `j` is a contiguous run of
+        // `inputs` weights — the one place the storage convention matters, and
+        // it is the writer's own.
+        var weights = last.weights
+        var biases = last.biases
+        for j in 0..<last.outputs {
+            let g = Float(gain[j])
+            let row = j * last.inputs
+            for i in 0..<last.inputs { weights[row + i] *= g }
+            biases[j] = biases[j] * g + Float(offset[j])
+        }
+        last = Layer(weights: weights, biases: biases, inputs: last.inputs, outputs: last.outputs)
+
+        var layers = p.layers
+        layers[layers.count - 1] = last
+        // Straight back out through this package's own writer and reader, so a
+        // folded policy is a policy in exactly the sense everything else means
+        // it — not a struct assembled behind the loader's back.
+        return try DuckPolicy.load(from: encoded(mean: p.mean, std: p.std, layers: layers))
+    }
+
     /// One dense layer, in the order the file wants it: weights row-major
     /// `[outputs][inputs]`, which is the ONNX `transB=1` convention.
     public struct Layer: Equatable, Sendable {
