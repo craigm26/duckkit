@@ -200,6 +200,15 @@ public enum DuckPolicyWriter {
         }
 
         var graph: [UInt8] = []
+        // THE GRAPH HAS TO BE NAMED, and this package wrote nothing here until
+        // 2026-09-03. `onnx.checker.check_model` refuses a model whose graph
+        // name is empty — "Field 'name' of 'graph' is required to be non-empty"
+        // — so every file this app has ever written failed the official
+        // validator while loading fine in onnxruntime, which does not check it.
+        // The eighteen real trained policies in the corpus all carry
+        // `main_graph`; this writes the same, so a file from here is
+        // indistinguishable from one of theirs in the field that was missing.
+        graph += stringField(2, "main_graph")
         for n in nodes { graph += delimited(1, n) }
         for t in initializers { graph += delimited(5, t) }
         graph += delimited(11, valueInfo("obs", width: mean.count))
@@ -222,6 +231,9 @@ public enum DuckPolicyWriter {
         // to pick these.
         var model: [UInt8] = []
         model += varintField(1, 8)                          // ir_version
+        // WHO WROTE IT, which is the other field a checker reads and a person
+        // reads when a file turns up somewhere and nobody remembers why.
+        model += stringField(2, "Microduck Studio")
         model += delimited(7, graph)
         model += delimited(8, varintField(2, 18))           // opset_import: default domain, v18
         return Data(model)

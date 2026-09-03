@@ -244,6 +244,29 @@ final class DuckPolicyWriterTests: XCTestCase {
         }
     }
 
+    // MARK: - the fields a validator reads and this package used to skip
+
+    /// EVERY FILE THIS PACKAGE WROTE FAILED `onnx.checker.check_model` on one
+    /// missing field: "Field 'name' of 'graph' is required to be non-empty."
+    /// onnxruntime does not check it, so the robot and the bench loaded them
+    /// and nothing here noticed for the life of the writer. The eighteen real
+    /// trained policies in the corpus all carry `main_graph`.
+    func testTheGraphIsNamedSoAValidatorAcceptsIt() throws {
+        let bytes = Array(try DuckPolicy.load(from: bundled("alpha_walking")).encoded())
+        let graph = try XCTUnwrap(Fields.first(7, in: bytes), "a model has a graph")
+        let name = try XCTUnwrap(Fields.first(2, in: graph), "the graph is named")
+        XCTAssertFalse(name.isEmpty)
+        XCTAssertEqual(String(decoding: name, as: UTF8.self), "main_graph")
+    }
+
+    /// And the model says who wrote it, which is the other field a checker
+    /// reads and the only one that answers "where did this file come from".
+    func testTheModelNamesItsProducer() throws {
+        let bytes = Array(try DuckPolicy.load(from: bundled("alpha_walking")).encoded())
+        let producer = try XCTUnwrap(Fields.first(2, in: bytes))
+        XCTAssertEqual(String(decoding: producer, as: UTF8.self), "Microduck Studio")
+    }
+
     // MARK: - just enough protobuf to inspect what was written
 
     /// Reading the file back with this package's own loader is the test that
