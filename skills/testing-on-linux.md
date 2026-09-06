@@ -118,7 +118,7 @@ A few patterns already in the repo worth reusing:
 
 **`ZZExport` writes outside the repo.** `Tests/DuckKitTests/ZZExport.swift`
 exports DuckKit's verified constants to
-`/home/craigm26/projects/duck-sounds/sim/duckkit-constants.json` so the web
+`/home/craigm26/projects/duckbench/sim/duckkit-constants.json` so the web
 simulator uses the same numbers rather than a retyped copy. It is named `ZZ` so
 it sorts last. On any machine without that directory it will fail — that is a
 path assumption, not a defect in the code under test, and it is not evidence that

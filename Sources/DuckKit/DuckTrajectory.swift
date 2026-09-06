@@ -21,7 +21,7 @@ import Foundation
 /// `alpha_walking.onnx` runs every fourth step, which is the robot's 50 Hz,
 /// through the TRAINING control path: target = home + action at scale 1.0,
 /// no filter, exactly what mjlab drove during training. The recorder is
-/// `sim/record.mjs` in the `duck-sounds` repo.
+/// `sim/record.mjs` in the `duckbench` repo.
 ///
 /// AN EARLIER GENERATION OF THESE CLIPS WAS NON-CANON THREE WAYS — a
 /// hand-tuned stiffness-sweep plant (Pollen had not yet published their
