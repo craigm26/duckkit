@@ -46,7 +46,8 @@ public struct DuckPolicy: Sendable {
         /// policy shares. Carries what was found so "wrong file" and "wrong
         /// build" are distinguishable.
         case unsupportedArchitecture(String)
-        /// A tensor width disagrees with the 61→512→256→128→14 contract.
+        /// A tensor width breaks the chain 61 → … → 14, or a bound in
+        /// `shapeProblem`. The alpha shape is 61→512→256→128→14.
         case shape(String)
     }
 
@@ -141,11 +142,11 @@ public struct DuckPolicy: Sendable {
     /// The parameters, in the shape a writer wants them.
     ///
     /// READABLE BECAUSE A POLICY THAT CANNOT BE WRITTEN BACK CANNOT BE
-    /// COMBINED. Every network this loader accepts has the identical
-    /// architecture — it refuses anything else — so a weighted average of two
-    /// of them is a valid policy in the only sense this file recognises, and
-    /// blending is the one interesting thing a phone can do with trained
-    /// networks it has no way to retrain. That needs the numbers.
+    /// COMBINED. A weighted average of two networks with the same layer widths
+    /// is a valid policy in the only sense this file recognises, and blending
+    /// is the one interesting thing a phone can do with trained networks it has
+    /// no way to retrain. That needs the numbers — and, since this loader also
+    /// takes narrower students, a blender that checks both `layerWidths` agree.
     ///
     /// It hands back copies of what was parsed. Nothing here can be mutated
     /// into a policy that disagrees with the file it came from.
@@ -162,8 +163,76 @@ public struct DuckPolicy: Sendable {
         return try DuckPolicyWriter.encoded(mean: p.mean, std: p.std, layers: p.layers)
     }
 
-    /// Expected layer widths, outermost first.
+    /// The alpha shape, outermost first: the widths every Pollen release
+    /// shares, and the only shape this package loaded until 2026-09-24.
+    ///
+    /// NO LONGER THE ONLY SHAPE, BUT STILL THE ONE THAT MEANS "POLLEN'S".
+    /// Distilled students (craigm26/duckbatch publishes 61→128→128→14 and
+    /// 61→256→128→64→14 walkers that Pollen's own simulator loads) are the
+    /// same graph with narrower hidden layers, so `load` now takes any width
+    /// that `shapeProblem` accepts. This constant stays because `isAlphaShape`
+    /// is a real question — a blend, a fingerprint and a copy line all
+    /// behave differently for the shape every official release has.
     public static let expectedWidths = [(61, 512), (512, 256), (256, 128), (128, 14)]
+
+    /// At most this many hidden layers (ELUs). The alpha shape has three.
+    ///
+    /// THE BOUNDS ARE THE CONTRACT THAT REPLACED THE FIXED WIDTHS. "Any MLP"
+    /// is not a thing to hand a 50 Hz loop on a phone, and not a thing to
+    /// describe to App Review; "one op pattern, capped depth, width and
+    /// parameter count" is. The caps sit well above anything trained for this
+    /// robot so far and well below what a scalar Swift forward pass can do in
+    /// a 20 ms tick: a million multiply-adds is about five alpha policies.
+    public static let maxHiddenLayers = 4
+    /// At most this many units in any one layer. The alpha shape's widest is 512.
+    public static let maxLayerWidth = 1_024
+    /// At most this many learned weights and biases. The alpha shape has 197,774.
+    public static let maxParameters = 1_000_000
+
+    /// Why a chain of layer widths is not a network this package runs, or
+    /// `nil` when it is.
+    ///
+    /// ONE RULE FOR THE READER AND THE WRITER. `load` refuses with this
+    /// sentence and `DuckPolicyWriter.encoded` refuses to write with it, so a
+    /// file this package writes is by construction one it will read, whatever
+    /// its widths. Widths are `(inputs, outputs)`, outermost first.
+    public static func shapeProblem(_ widths: [(inputs: Int, outputs: Int)]) -> String? {
+        guard let first = widths.first, let last = widths.last else {
+            return "it has no layers"
+        }
+        let hidden = widths.count - 1
+        guard hidden >= 1, hidden <= maxHiddenLayers else {
+            return "it has \(hidden) hidden layers; between 1 and \(maxHiddenLayers) are supported"
+        }
+        guard first.inputs == DuckObservation.length else {
+            return "its first layer takes \(first.inputs) inputs, not the \(DuckObservation.length)-float observation"
+        }
+        guard last.outputs == DuckModel.policyJointCount else {
+            return "its last layer gives \(last.outputs) outputs, not the \(DuckModel.policyJointCount) policy joints"
+        }
+        for (i, pair) in zip(widths, widths.dropFirst()).enumerated() where pair.0.outputs != pair.1.inputs {
+            return "layer \(i) gives \(pair.0.outputs) outputs but layer \(i + 1) takes \(pair.1.inputs)"
+        }
+        for (i, w) in widths.enumerated() where w.inputs < 1 || w.outputs < 1
+            || w.inputs > maxLayerWidth || w.outputs > maxLayerWidth {
+            return "layer \(i) is \(w.inputs) to \(w.outputs); widths run from 1 to \(maxLayerWidth)"
+        }
+        let parameters = widths.reduce(0) { $0 + $1.inputs * $1.outputs + $1.outputs }
+        guard parameters <= maxParameters else {
+            return "it has \(parameters) parameters; at most \(maxParameters) are supported"
+        }
+        return nil
+    }
+
+    /// Whether this is the shape every official release shares.
+    ///
+    /// Not a statement about provenance — a student trained to the alpha
+    /// shape is still someone's own training run, and `DuckOfficialPolicies`
+    /// is where "released" is decided. This answers only "is it the big one".
+    public var isAlphaShape: Bool {
+        layerWidths.map { [$0.inputs, $0.outputs] }
+            == DuckPolicy.expectedWidths.map { [$0.0, $0.1] }
+    }
 
     // ── what a loaded policy is made of ───────────────────────────────────
 
@@ -251,6 +320,38 @@ public struct DuckPolicy: Sendable {
         return out
     }
 
+    /// The bytes a policy's identity is computed over, and the name of the
+    /// recipe that produced them.
+    ///
+    /// V1 CARRIES NO SHAPE, WHICH WAS FINE WHILE THERE WAS ONE SHAPE. Once the
+    /// loader takes narrower students, two networks holding the same floats in
+    /// different widths would share `canonicalParameterBytes`, and so a
+    /// fingerprint — the same learned numbers, a different robot. So:
+    ///
+    /// - the alpha shape keeps `canonical-parameter-bytes-v1`, byte for byte,
+    ///   because the nine fingerprints `DuckOfficialPolicies` records are
+    ///   digests of exactly those bytes and must go on matching;
+    /// - every other shape is `canonical-parameter-bytes-v2`: the four ASCII
+    ///   bytes `DPv2`, the layer count, then each layer's inputs and outputs,
+    ///   all little-endian UInt32, then the v1 bytes unchanged. The shape is
+    ///   inside the identity, and anything that has to run the network from
+    ///   these bytes alone (a phone bench) can read the widths off the front.
+    public var canonicalIdentityBytes: (scheme: String, bytes: Data) {
+        guard !isAlphaShape else {
+            return ("canonical-parameter-bytes-v1", canonicalParameterBytes)
+        }
+        var header = Data("DPv2".utf8)
+        func append(_ value: Int) {
+            withUnsafeBytes(of: UInt32(value).littleEndian) { header.append(contentsOf: $0) }
+        }
+        append(layers.count)
+        for layer in layers {
+            append(layer.inputs)
+            append(layer.outputs)
+        }
+        return ("canonical-parameter-bytes-v2", header + canonicalParameterBytes)
+    }
+
     // ── reading a file ────────────────────────────────────────────────────
 
     /// Read an ONNX file's structure without deciding whether it is usable.
@@ -281,8 +382,14 @@ public struct DuckPolicy: Sendable {
         let file = try parse(data)
         let structure = summarize(file)
 
-        let expected = ["Sub", "Div", "Gemm", "Elu", "Gemm", "Elu", "Gemm", "Elu", "Gemm"]
-        guard structure.ops == expected else {
+        // `Sub, Div, (Gemm, Elu)×k, Gemm`: the normaliser, k hidden layers,
+        // the output layer. The alpha shape is k = 3, nine ops. Anything else —
+        // a Relu, a missing normaliser, a trailing activation — is refused with
+        // the op sequence it actually has.
+        let ops = structure.ops
+        let hidden = (ops.count - 3) / 2
+        let pattern = ["Sub", "Div"] + Array(repeating: ["Gemm", "Elu"], count: max(hidden, 0)).flatMap { $0 } + ["Gemm"]
+        guard ops.count >= 5, ops.count % 2 == 1, hidden <= DuckPolicy.maxHiddenLayers, ops == pattern else {
             throw LoadError.unsupportedArchitecture("op sequence \(structure.ops)")
         }
         for node in file.nodes {
@@ -335,17 +442,26 @@ public struct DuckPolicy: Sendable {
             throw LoadError.shape("normalizer std[\(i)] is \(s) — division by it would poison every inference")
         }
 
+        // The widths come from the file now, not from a constant, so each
+        // layer is checked for being a well-formed Gemm on its own and the
+        // chain as a whole is checked by the one shape rule the writer shares.
         var layers: [Layer] = []
         for (which, node) in file.nodes.enumerated() where node.op == "Gemm" {
             let weightName = try operand(node, 1, "weight")
             let biasName = try operand(node, 2, "bias")
             let w = try tensor(weightName, "weight")
             let b = try tensor(biasName, "bias")
-            let (inputs, outputs) = expectedWidths[layers.count]
-            guard w.dims == [outputs, inputs], b.dims == [outputs] else {
-                throw LoadError.shape("layer \(layers.count) (node \(which)) is \(w.dims)/\(b.dims), expected [\(outputs), \(inputs)]/[\(outputs)]")
+            guard w.dims.count == 2, b.dims == [w.dims[0]] else {
+                throw LoadError.shape("layer \(layers.count) (node \(which)) is \(w.dims)/\(b.dims), expected [outputs, inputs]/[outputs]")
             }
-            layers.append(Layer(weights: w.floats, biases: b.floats, inputs: inputs, outputs: outputs))
+            let expected = layers.last?.outputs ?? DuckObservation.length
+            guard w.dims[1] == expected else {
+                throw LoadError.shape("layer \(layers.count) (node \(which)) is \(w.dims)/\(b.dims), expected [\(w.dims[0]), \(expected)]/[\(w.dims[0])]")
+            }
+            layers.append(Layer(weights: w.floats, biases: b.floats, inputs: w.dims[1], outputs: w.dims[0]))
+        }
+        if let problem = shapeProblem(layers.map { ($0.inputs, $0.outputs) }) {
+            throw LoadError.shape(problem)
         }
         return DuckPolicy(mean: mean.floats, std: std.floats, layers: layers)
     }

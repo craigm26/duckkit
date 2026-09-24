@@ -21,12 +21,15 @@ import DuckKit
 /// parameters are exactly the thing whose change matters.
 extension DuckPolicy {
 
-    /// SHA-256 over `canonicalParameterBytes`, lowercase hex.
+    /// SHA-256 over `canonicalIdentityBytes`, lowercase hex: exactly the v1
+    /// parameter bytes for the alpha shape (so every recorded official
+    /// fingerprint still matches), and the shape-prefixed v2 bytes for any
+    /// other shape the loader accepts.
     ///
     /// Full 64 characters, because this is what gets signed and compared by
     /// machine. `shortFingerprint` is the one for a screen.
     public var fingerprint: String {
-        SHA256.hash(data: canonicalParameterBytes)
+        SHA256.hash(data: canonicalIdentityBytes.bytes)
             .map { String(format: "%02x", $0) }
             .joined()
     }
@@ -52,7 +55,7 @@ extension DuckPolicy {
     public var fingerprintRecord: CanonicalValue {
         .object([
             "algorithm": .string("sha-256"),
-            "over": .string("canonical-parameter-bytes-v1"),
+            "over": .string(canonicalIdentityBytes.scheme),
             "parameterCount": .int(Int64(parameterCount + normalization.mean.count
                                          + normalization.std.count)),
             "digest": .string(fingerprint),

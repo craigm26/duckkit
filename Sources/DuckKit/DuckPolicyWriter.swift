@@ -7,11 +7,13 @@ import Foundation
 /// nothing could write one, so a network could be inspected, fingerprinted and
 /// argued about but never produced. That closed off the only interesting thing
 /// a phone can do with a set of trained networks it cannot retrain: combine
-/// them. Blending is arithmetic — the whole family shares one architecture,
-/// 61-512-256-128-14 with ELU throughout, because `DuckPolicy.load` refuses
-/// anything else — so a weighted average of two policies is a valid policy in
-/// the only sense the loader recognises. Whether it WORKS is a separate
-/// question and a measured one; whether it loads is settled here.
+/// them. Blending is arithmetic, and a weighted average of two networks is a
+/// valid policy only when both have the same layer widths. Until 2026-09-24
+/// that was guaranteed, because `DuckPolicy.load` refused everything but
+/// 61-512-256-128-14; it now also loads narrower students of the same graph,
+/// so a blender has to compare `layerWidths` itself and refuse a mismatch.
+/// Whether a blend WORKS is a separate question and a measured one; whether
+/// it loads is settled here.
 ///
 /// AND IT IS THE STEP ONTO THE ROBOT. robotd takes an ONNX pointed at by
 /// `[policy]` in its config and nothing else — no over-the-air, no upload RPC.
@@ -148,7 +150,8 @@ public enum DuckPolicyWriter {
 
     /// The bytes of an ONNX file this package will load.
     ///
-    /// THE SHAPE IS NOT NEGOTIABLE and is checked before a byte is written,
+    /// THE SHAPE IS CHECKED BEFORE A BYTE IS WRITTEN, against the same rule
+    /// `DuckPolicy.load` applies (`DuckPolicy.shapeProblem`),
     /// because a file that leaves here malformed is one somebody else's runtime
     /// has to refuse — and `robotd` refusing a file is a much worse place to
     /// find out than this function refusing to write one.
@@ -158,22 +161,18 @@ public enum DuckPolicyWriter {
                 "the normaliser is \(mean.count) and \(std.count) wide, not "
                 + "\(DuckObservation.length)")
         }
-        let widths = DuckPolicy.expectedWidths
-        guard layers.count == widths.count else {
-            throw WriteError.wrongShape("it has \(layers.count) layers, not \(widths.count)")
+        // The reader's own rule, so nothing leaves here that `load` refuses.
+        if let problem = DuckPolicy.shapeProblem(layers.map { ($0.inputs, $0.outputs) }) {
+            throw WriteError.wrongShape(problem)
         }
-        for (i, (layer, want)) in zip(layers, widths).enumerated() {
-            guard layer.inputs == want.0, layer.outputs == want.1 else {
+        for (i, layer) in layers.enumerated() {
+            guard layer.weights.count == layer.inputs * layer.outputs else {
                 throw WriteError.wrongShape(
-                    "layer \(i) is \(layer.inputs) to \(layer.outputs), not \(want.0) to \(want.1)")
+                    "layer \(i) carries \(layer.weights.count) weights, not \(layer.inputs * layer.outputs)")
             }
-            guard layer.weights.count == want.0 * want.1 else {
+            guard layer.biases.count == layer.outputs else {
                 throw WriteError.wrongShape(
-                    "layer \(i) carries \(layer.weights.count) weights, not \(want.0 * want.1)")
-            }
-            guard layer.biases.count == want.1 else {
-                throw WriteError.wrongShape(
-                    "layer \(i) carries \(layer.biases.count) biases, not \(want.1)")
+                    "layer \(i) carries \(layer.biases.count) biases, not \(layer.outputs)")
             }
         }
 
@@ -181,8 +180,9 @@ public enum DuckPolicyWriter {
             tensor("mean", dims: [mean.count], floats: mean),
             tensor("std", dims: [std.count], floats: std),
         ]
-        // The normaliser, then four Gemm/ELU pairs with the last ELU dropped —
-        // the same nine ops in the same order the reader insists on.
+        // The normaliser, then one Gemm/ELU pair per layer with the last ELU
+        // dropped: `Sub, Div, (Gemm, Elu)×k, Gemm`, the pattern the reader
+        // insists on (nine ops for the alpha shape).
         var nodes: [[UInt8]] = [
             node("Sub", inputs: ["obs", "mean"], output: "sub_out"),
             node("Div", inputs: ["sub_out", "std"], output: "h0"),
@@ -312,9 +312,10 @@ public enum DuckPolicyWriter {
         }
 
         let p = policy.parameters
-        guard var last = p.layers.last, p.layers.count == DuckPolicy.expectedWidths.count else {
-            throw WriteError.wrongShape("it has \(p.layers.count) layers, not "
-                                        + "\(DuckPolicy.expectedWidths.count)")
+        // Only the last layer is touched, so only its width matters: a
+        // student with two hidden layers folds exactly like the alpha shape.
+        guard var last = p.layers.last else {
+            throw WriteError.wrongShape("it has no layers")
         }
         guard last.outputs == width else {
             throw WriteError.wrongShape("its last layer is \(last.outputs) wide, not \(width)")
