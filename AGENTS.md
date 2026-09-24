@@ -95,7 +95,8 @@ swift build
 SWIFT_BACKTRACE=enable=no swift test
 ```
 
-343 tests, 0 failures, measured on Linux aarch64 at the time of writing; the
+343 tests, 0 failures, measured on Linux aarch64 at the time of writing (385,
+2 skipped, 0 failures on Linux x86_64 with Swift 6.4 on 2026-09-24); the
 package supports macOS too, and neither run needs hardware, a network or a
 device. Report the count you actually saw, on the platform you actually ran. If
 a change segfaults after you touched a stored property, that is a stale
@@ -163,7 +164,8 @@ output afterwards. Doing both bends the head twice.
 nine fingerprinted releases (the extra two are the roller policies). Every one is
 the same nine-operation graph: `(obs − mean)/std → 61×512 → ELU → 512×256 → ELU
 → 256×128 → ELU → 128×14`, 197,774 learned parameters, about forty microseconds.
-See `skills/running-a-policy.md`.
+`load` also accepts narrower students of that graph (`DuckPolicy.shapeProblem`);
+do not reintroduce a fixed-width check. See `skills/running-a-policy.md`.
 
 ---
 
