@@ -73,7 +73,7 @@ types that already exist, rather than a fourth that wraps them.
 |---|---|
 | `DuckModel` | Joint names and order, home pose, travel limits, action scale, the trained-in filter coefficients, the battery curve |
 | `DuckObservation` | The 61-float contract and the 13-value command block, with every upstream trap preserved |
-| `DuckPolicy` | A hand-written ONNX reader and an ELU multilayer perceptron. Loads the real policies, refuses anything else. Describes and differentiates them too, and serializes its parameters in one fixed order so they can be identified |
+| `DuckPolicy` | A hand-written ONNX reader and an ELU multilayer perceptron. Loads the real policies and narrower students of the same graph, refuses anything else. Describes and differentiates them too, and serializes its parameters in one fixed order so they can be identified |
 | `DuckGait` | Raw policy output to joint targets: scale, low-pass, travel stops that are named rather than silent |
 | `DuckKinematics` | Forward kinematics over the robot's MuJoCo chain. Every body and named site, in metres |
 | `DuckSimulation` | The 50 Hz loop — observation, policy, targets, observation |
@@ -156,7 +156,9 @@ nine-operation graph —
 obs[1,61] → (obs − mean)/std → 61×512 → ELU → 512×256 → ELU → 256×128 → ELU → 128×14
 ```
 
-— about two hundred thousand parameters and forty microseconds of work.
+— about two hundred thousand parameters and forty microseconds of work. (The
+loader also takes students of the same graph with narrower hidden layers; see
+`skills/running-a-policy.md`.)
 onnxruntime is a hundred-megabyte answer to that question, and Core ML does not
 run under `swift test`. And `DuckKinematics` carries its own quaternion type
 because `simd` does not exist on Linux, and the whole computation is fifteen

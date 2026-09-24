@@ -31,6 +31,14 @@ Core ML cannot run under `swift test` on a Pi.
 `Description.parameterCount` reports 197,896 for the same file — the extra
 2 × 61 are the normalizer's mean and std, which PyTorch would call buffers.
 
+**Students of the same graph also load** (since 2026-09-24): `Sub, Div, (Gemm,
+Elu)×k, Gemm` with 1 to 4 hidden layers, widths chaining 61 → … → 14, at most
+1,024 wide and 1,000,000 parameters. `DuckPolicy.shapeProblem` is that rule and
+the writer shares it; `isAlphaShape` tells the releases' shape apart. A
+distilled 61→128→128→14 student is vendored as a test fixture. Two consequences
+to remember: a blend must check both `layerWidths` agree, and a non-alpha
+policy's fingerprint is over `canonical-parameter-bytes-v2` (widths first).
+
 ---
 
 ## Load, Then Infer
@@ -56,7 +64,7 @@ ticks later mid-stride.
 |---|---|
 | `.malformed(String)` | Not walkable protobuf, truncated, or an initializer the graph references is absent |
 | `.unsupportedArchitecture(String)` | Parsed fine, wrong network — carries what was found |
-| `.shape(String)` | A tensor width disagrees with the 61→512→256→128→14 contract |
+| `.shape(String)` | A tensor width breaks the 61 → … → 14 chain or a bound in `shapeProblem` |
 
 ---
 
