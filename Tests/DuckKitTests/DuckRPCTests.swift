@@ -355,11 +355,13 @@ final class DuckRPCTests: XCTestCase {
         XCTAssertEqual(correlator.inFlightCount, 2)
 
         var decoder = DuckRPC.StreamDecoder()
-        let answers = decoder.append(Data((
+        // Typed on its own line: Swift 6.4 gives up type-checking this
+        // concatenation when it is inlined into `Data(...)`.
+        let stream: String =
             #"{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"kick_left is holding the robot"}}"# + "\n"
             + #"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"# + "\n"
             + #"{"jsonrpc":"2.0","method":"robot.state","params":{}}"# + "\n"
-        ).utf8))
+        let answers = decoder.append(Data(stream.utf8))
         XCTAssertEqual(correlator.method(answering: answers[0]), "duck.skill",
                        "the second answer arrived first, which is why ids exist")
         XCTAssertEqual(correlator.method(answering: answers[1]), "duck.sound")
