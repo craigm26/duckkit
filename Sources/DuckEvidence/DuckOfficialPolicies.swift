@@ -139,6 +139,14 @@ public enum DuckOfficialPolicies {
     /// that is wrong in a way nothing detects until it wrongly marks a real
     /// release unrecognised.
     public static let releases: [Release] = [
+        // POLLEN'S DEFAULT GAIT SINCE SET v5, AND FIRST IN THE WALK SLOT (2026-10-02, Craig: switch
+        // the app's walk to what a real Microduck walks with). Set manifest @d5a8b55 `slot: walk`;
+        // file sha256 1c659be5…. It is FIRST so a slot lookup prefers it; alpha_walking stays in
+        // the slot behind it, so a bench that only holds alpha_walking still walks.
+        Release(filename: "velstand.onnx",
+                fingerprint: "ef3d55bcfc111d9ccb84443bcedd8e604b9e389f35715ad2d24c829526604039",
+                purpose: "Walking and standing in one network: the gait a real Microduck runs by default.",
+                slot: .walk),
         Release(filename: "alpha_walking.onnx",
                 fingerprint: "da820b718aa8bdb3317c018afba3ad3f461e0cf42256811c204dc005546ec4a3",
                 purpose: "Walking, at a commanded velocity. The default gait.",
@@ -147,8 +155,10 @@ public enum DuckOfficialPolicies {
                 fingerprint: "1157f7e7f9e88b2e61070a0f28833ff02bdf89799583434e69914affb170c0ce",
                 purpose: "Standing still and staying there.",
                 slot: .stand),
+        // v6, ROBOT-VALIDATED BY POLLEN 2026-10-01 (pollen-robotics/microduck-policies @d5a8b55,
+        // file sha256 a6f102d9…). The earlier sit-stand (85fa1fc2…) is in `superseded`.
         Release(filename: "alpha_sitstand.onnx",
-                fingerprint: "85fa1fc2331baf003575a96a7dbf2222cf7ca10aef9c17372cf0b92ef42199e2",
+                fingerprint: "da3d3110fd66bfbafbcb20ac093a2b4d827fdd52b6bca1fe5c426517922bd670",
                 purpose: "Sitting down and getting back up, on a commanded flag.",
                 slot: .sitstand),
         Release(filename: "alpha_ground_pick.onnx",
@@ -177,19 +187,31 @@ public enum DuckOfficialPolicies {
                 slot: nil, mode: .roller),
     ]
 
+    /// Earlier releases of a file that has since been replaced, by fingerprint → filename.
+    /// Still Pollen's own weights, so still recognised, as the current release of that file.
+    public static let superseded: [String: String] = [
+        // sit-stand before v6 (what the app bundled until 2026-10-02).
+        "85fa1fc2331baf003575a96a7dbf2222cf7ca10aef9c17372cf0b92ef42199e2": "alpha_sitstand.onnx",
+    ]
+
     /// Fingerprint to release, built once.
     static let byFingerprint: [String: Release] = Dictionary(
         uniqueKeysWithValues: releases.map { ($0.fingerprint, $0) })
 
     /// What this table can say about a loaded policy.
     public static func standing(of policy: DuckPolicy) -> Standing {
-        byFingerprint[policy.fingerprint].map(Standing.released) ?? .unrecognised
+        standing(ofFingerprint: policy.fingerprint)
     }
 
     /// The same question asked of a fingerprint that was recorded earlier —
     /// so a stored record can be re-checked without the file it describes.
     public static func standing(ofFingerprint fingerprint: String) -> Standing {
-        byFingerprint[fingerprint.lowercased()].map(Standing.released) ?? .unrecognised
+        let key = fingerprint.lowercased()
+        if let release = byFingerprint[key] { return .released(release) }
+        if let file = superseded[key], let current = releases.first(where: { $0.filename == file }) {
+            return .released(current)
+        }
+        return .unrecognised
     }
 
     /// The sentence to show a person, phrased so it does not overclaim.

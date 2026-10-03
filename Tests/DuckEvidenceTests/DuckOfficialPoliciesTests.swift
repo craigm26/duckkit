@@ -25,11 +25,12 @@ final class DuckOfficialPoliciesTests: XCTestCase {
         XCTAssertFalse(release.purpose.isEmpty)
     }
 
-    func testNineReleasesWithDistinctFingerprints() {
+    /// Pollen's set @d5a8b55: the nine the app has always known, plus velstand.
+    func testTenReleasesWithDistinctFingerprints() {
         let releases = DuckOfficialPolicies.releases
-        XCTAssertEqual(releases.count, 9)
-        XCTAssertEqual(Set(releases.map(\.fingerprint)).count, 9, "two entries share a digest")
-        XCTAssertEqual(Set(releases.map(\.filename)).count, 9)
+        XCTAssertEqual(releases.count, 10)
+        XCTAssertEqual(Set(releases.map(\.fingerprint)).count, 10, "two entries share a digest")
+        XCTAssertEqual(Set(releases.map(\.filename)).count, 10)
         for release in releases {
             XCTAssertEqual(release.fingerprint.count, 64, "\(release.filename)")
             XCTAssertTrue(release.fingerprint.allSatisfy { $0.isHexDigit && !$0.isUppercase },
@@ -71,5 +72,27 @@ final class DuckOfficialPoliciesTests: XCTestCase {
         let text = DuckOfficialPolicies.summary(for: .released(release))
         XCTAssertTrue(text.contains("Pollen Robotics"), text)
         XCTAssertTrue(text.contains(release.filename), text)
+    }
+
+    /// Sit-stand v6 replaced the earlier one; both are Pollen's, so both are recognised, as the
+    /// current release of that file. Velstand is recognised and leads the walk slot.
+    func testSitStandV6AndTheEarlierOneAreBothOfficial() {
+        let v6 = "da3d3110fd66bfbafbcb20ac093a2b4d827fdd52b6bca1fe5c426517922bd670"
+        let earlier = "85fa1fc2331baf003575a96a7dbf2222cf7ca10aef9c17372cf0b92ef42199e2"
+        for f in [v6, earlier] {
+            guard case .released(let r) = DuckOfficialPolicies.standing(ofFingerprint: f) else {
+                return XCTFail("\(f) is Pollen's sit-stand")
+            }
+            XCTAssertEqual(r.filename, "alpha_sitstand.onnx")
+            XCTAssertEqual(r.fingerprint, v6, "the current release is the one reported")
+        }
+        guard case .released(let v) = DuckOfficialPolicies.standing(
+            ofFingerprint: "ef3d55bcfc111d9ccb84443bcedd8e604b9e389f35715ad2d24c829526604039") else {
+            return XCTFail("velstand is Pollen's default gait")
+        }
+        XCTAssertEqual(v.slot, .walk)
+        // Velstand first, alpha_walking behind it: a lookup prefers what a real duck walks with.
+        XCTAssertEqual(DuckOfficialPolicies.releases.filter { $0.slot == .walk }.map(\.filename),
+                       ["velstand.onnx", "alpha_walking.onnx"])
     }
 }
