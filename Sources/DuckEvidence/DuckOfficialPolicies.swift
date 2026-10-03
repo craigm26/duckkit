@@ -139,6 +139,14 @@ public enum DuckOfficialPolicies {
     /// that is wrong in a way nothing detects until it wrongly marks a real
     /// release unrecognised.
     public static let releases: [Release] = [
+        // POLLEN'S DEFAULT GAIT SINCE SET v5, AND FIRST IN THE WALK SLOT (2026-10-02, Craig: switch
+        // the app's walk to what a real Microduck walks with). Set manifest @d5a8b55 `slot: walk`;
+        // file sha256 1c659be5…. It is FIRST so a slot lookup prefers it; alpha_walking stays in
+        // the slot behind it, so a bench that only holds alpha_walking still walks.
+        Release(filename: "velstand.onnx",
+                fingerprint: "ef3d55bcfc111d9ccb84443bcedd8e604b9e389f35715ad2d24c829526604039",
+                purpose: "Walking and standing in one network: the gait a real Microduck runs by default.",
+                slot: .walk),
         Release(filename: "alpha_walking.onnx",
                 fingerprint: "da820b718aa8bdb3317c018afba3ad3f461e0cf42256811c204dc005546ec4a3",
                 purpose: "Walking, at a commanded velocity. The default gait.",
@@ -177,15 +185,6 @@ public enum DuckOfficialPolicies {
                 fingerprint: "d13112dfe0c3b43cbbd7f3b219c6be2a5dcf21ccd490eae2028a915ce234c081",
                 purpose: "Crouching low while rolling, to get under things.",
                 slot: nil, mode: .roller),
-        // POLLEN'S DEFAULT GAIT SINCE SET v5: the network a real Microduck's `walk` slot runs
-        // (set manifest @d5a8b55, `slot: walk`; file sha256 1c659be5…). NO SLOT HERE YET, on
-        // purpose: `DuckQuickActions.filename(filling:)` takes the first release in a slot, so
-        // giving velstand `.walk` would silently change which network every app drive loads.
-        // That switch is its own decision.
-        Release(filename: "velstand.onnx",
-                fingerprint: "ef3d55bcfc111d9ccb84443bcedd8e604b9e389f35715ad2d24c829526604039",
-                purpose: "Walking and standing in one network: the gait a real Microduck runs by default.",
-                slot: nil),
     ]
 
     /// Earlier releases of a file that has since been replaced, by fingerprint → filename.

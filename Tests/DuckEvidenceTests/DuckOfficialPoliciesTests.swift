@@ -75,7 +75,7 @@ final class DuckOfficialPoliciesTests: XCTestCase {
     }
 
     /// Sit-stand v6 replaced the earlier one; both are Pollen's, so both are recognised, as the
-    /// current release of that file. Velstand is recognised but takes no slot yet.
+    /// current release of that file. Velstand is recognised and leads the walk slot.
     func testSitStandV6AndTheEarlierOneAreBothOfficial() {
         let v6 = "da3d3110fd66bfbafbcb20ac093a2b4d827fdd52b6bca1fe5c426517922bd670"
         let earlier = "85fa1fc2331baf003575a96a7dbf2222cf7ca10aef9c17372cf0b92ef42199e2"
@@ -90,8 +90,9 @@ final class DuckOfficialPoliciesTests: XCTestCase {
             ofFingerprint: "ef3d55bcfc111d9ccb84443bcedd8e604b9e389f35715ad2d24c829526604039") else {
             return XCTFail("velstand is Pollen's default gait")
         }
-        XCTAssertNil(v.slot, "velstand takes the walk slot only by a deliberate change")
-        XCTAssertEqual(DuckOfficialPolicies.releases.first { $0.slot == .walk }?.filename,
-                       "alpha_walking.onnx", "what the app's walk loads is unchanged")
+        XCTAssertEqual(v.slot, .walk)
+        // Velstand first, alpha_walking behind it: a lookup prefers what a real duck walks with.
+        XCTAssertEqual(DuckOfficialPolicies.releases.filter { $0.slot == .walk }.map(\.filename),
+                       ["velstand.onnx", "alpha_walking.onnx"])
     }
 }
